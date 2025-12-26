@@ -3,8 +3,10 @@ const CACHE_NAME = 'cf-pwa-v1';
 const APP_SHELL = [
   './',
   './index.html',
-  './manifest.json'
+  './manifest.json',
+  './app.js'
 ];
+
 
 // Instalación
 self.addEventListener('install', event => {
