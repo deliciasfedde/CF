@@ -1,31 +1,34 @@
-// ===============================
-// APP SPA BÁSICA
-// ===============================
+const app = document.getElementById('app');
+const btn = document.getElementById('guardar');
 
-function renderLogin() {
-  const app = document.getElementById('app');
+// Mostrar estado
+app.innerHTML = `
+  <p>Estado: <b>${navigator.onLine ? 'Online' : 'Offline'}</b></p>
+`;
 
-  app.innerHTML = `
-    <h2>Login</h2>
-    <p>Bienvenido a Control de Mis Finanzas</p>
-    <button id="btnEntrar">Entrar</button>
-  `;
+// IndexedDB
+let db;
 
-  document.getElementById('btnEntrar').addEventListener('click', () => {
-    renderHome();
+const request = indexedDB.open('finanzasDB', 1);
+
+request.onupgradeneeded = e => {
+  db = e.target.result;
+  db.createObjectStore('gastos', { autoIncrement: true });
+};
+
+request.onsuccess = e => {
+  db = e.target.result;
+};
+
+btn.onclick = () => {
+  const tx = db.transaction('gastos', 'readwrite');
+  const store = tx.objectStore('gastos');
+
+  store.add({
+    monto: 1000,
+    fecha: new Date().toISOString()
   });
-}
 
-function renderHome() {
-  const app = document.getElementById('app');
+  alert('Gasto guardado OFFLINE');
+};
 
-  app.innerHTML = `
-    <h2>Inicio</h2>
-    <p>Esta es tu aplicación funcionando como SPA 🎉</p>
-  `;
-}
-
-// Vista inicial
-window.addEventListener('DOMContentLoaded', () => {
-  renderLogin();
-});
