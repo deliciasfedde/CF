@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Control de Finanzas</title>
+
+  <!-- PWA -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#f50782">
+
+  <!-- iOS -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Finanzas">
+</head>
+
+<body>
+  <h1>📊 Control de Finanzas</h1>
+  <p>PWA con offline real</p>
+
+  <button id="btnInstalar" style="display:none">
+    Instalar App
+  </button>
+
+  <script>
+    // Registrar Service Worker
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js');
+    }
+
+    // Botón instalar
+    let deferredPrompt;
+    window.addEventListener('beforeinstallprompt', e => {
+      e.preventDefault();
+      deferredPrompt = e;
+      document.getElementById('btnInstalar').style.display = 'block';
+    });
+
+    document.getElementById('btnInstalar').onclick = () => {
+      deferredPrompt.prompt();
+      deferredPrompt.userChoice.then(() => deferredPrompt = null);
+    };
+  </script>
+</body>
+</html>
