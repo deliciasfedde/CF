@@ -1,0 +1,21 @@
+{
+  "name": "Control de mis Finanzas",
+  "short_name": "Finanzas",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#f50782",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "https://i.imgur.com/aKWcXMn.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "https://i.imgur.com/aKWcXMn.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
