@@ -949,6 +949,13 @@ transition: background 0.3s ease;
 
 <!-- 🔹 Script completo para transmisiones dinámicas con control de visibilidad -->
 <script>
+
+  const modo = localStorage.getItem("modo");
+
+if (!modo) {
+  location.href = "login.html";
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   const contenedor = document.getElementById("videoContainer");
   const video = document.getElementById("videoPlayer");
