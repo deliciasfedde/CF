@@ -1,0 +1,3131 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Control de mis Finanzas</title>
+
+  <!-- PWA -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#f50782">
+
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+
+<body>
+ <body data-page="index">
+
+
+
+<!-- Indicadores LED -->
+ <div id="indicadores">
+  <span id="ledContent">HOY SERA UN BUEN DIA</span>
+</div>
+
+<div id="indicadores-resumen">
+  <span id="ledResumenContent">Cargando resumen...</span>
+</div>
+<!-- 🛑 Botón para detener/eliminar recordatorio activo -->
+<div id="boton-detener-recordatorio" style="display:none; margin-top:10px;">
+  <button onclick="eliminarRecordatorioActivo()" 
+          style="font-family:'Orbitron',sans-serif; font-size:28px; padding:15px 30px; 
+                 background:linear-gradient(45deg,#ff5252,#ff1744); color:white;
+                 border:none; border-radius:18px; cursor:pointer; box-shadow:0 0 15px #ff1744;">
+    🛑 Detener Recordatorio
+  </button>
+</div>
+
+<!-- 🔹 Botón principal: ahora abre el modal de páginas -->
+<div class="contenedor-boton">
+  <button id="boton-aplicaciones" onclick="abrirPaginas()">FUNCIONES EXTRAS</button>
+</div>
+
+
+
+
+<h1>CONTROL DE MIS FINANZAS</h1>
+
+<!-- CONTENEDOR PRINCIPAL DE LA APP (SPA / PWA) -->
+<div id="app">
+  <p>Cargando aplicación...</p>
+</div>
+
+<!-- Registro Movimientos -->
+<div class="card" style="margin-top: 50px;">
+
+
+<!-- 🔸 Selector de transmisiones -->
+<div id="selectorStreams" style="display:none; margin-top:20px;">
+  <label for="streamSelect" style="color:white; font-family:'Orbitron',sans-serif; font-size:30px;">
+    Selecciona una transmisión:
+  </label>
+  <select id="streamSelect"
+          style="width:85%; max-width:800px; background-color:#d5f5e6; color:#000; font-family:'Orbitron',sans-serif; font-size:28px; font-weight:bold; padding:8px; border:10px solid #112b38; border-radius:20px; box-shadow:0 0 10px #3ef0a0; text-align:center;">
+    <option value="">-- Selecciona un canal --</option>
+  </select>
+</div>
+
+
+
+
+<!-- Contenedor de video dentro del card -->
+<div id="videoContainer"
+     style="display:none; width:851px; height:315px; margin:40px auto; align-items:center; justify-content:center; overflow:hidden; border-radius:30px; position:relative; background:black; box-shadow:0 0 25px rgba(255,255,255,0.6);">
+
+  
+  <!-- Video para archivos MP4 o similares -->
+  <video id="videoPlayer" width="851" height="315" autoplay muted controls loop style="border-radius:30px; object-fit:cover; display:none;">
+    <source id="videoSource" src="" type="video/mp4">
+    Tu navegador no soporta el video.
+  </video>
+
+  <!-- Iframe para streams (YouTube, Twitch, Relay, etc.) -->
+  <iframe id="iframePlayer"
+          style="display:none; width:100%; height:100%; border:none; border-radius:30px;"
+          allow="autoplay; encrypted-media; picture-in-picture"
+          allowfullscreen>
+  </iframe>
+</div>
+
+<!-- 🔹 Script completo para transmisiones dinámicas con control de visibilidad -->
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  const contenedor = document.getElementById("videoContainer");
+  const video = document.getElementById("videoPlayer");
+  const source = document.getElementById("videoSource");
+  const iframe = document.getElementById("iframePlayer");
+  const selector = document.getElementById("selectorStreams");
+  const streamSelect = document.getElementById("streamSelect");
+
+  // 🟢 Primero verificamos la visibilidad global del contenedor
+  google.script.run.withSuccessHandler(visibilidad => {
+    if (!visibilidad.visible) {
+      if (selector) selector.style.display = "none";
+      if (contenedor) contenedor.style.display = "none";
+      console.log("🔒 Contenedor oculto por reglas globales en D2");
+      return;
+    }
+
+    // Si el contenedor es visible → cargar lista de transmisiones
+    google.script.run.withSuccessHandler(list => {
+      if (!list || list.length === 0) {
+        console.warn("⚠️ No hay transmisiones disponibles para este usuario.");
+        return;
+      }
+
+      selector.style.display = "block";
+      contenedor.style.display = "none";
+
+      // Llenar el selector con nombres desde la hoja
+      list.forEach((item, index) => {
+        const opt = document.createElement("option");
+        opt.value = item.url;
+        opt.textContent = item.name || `Canal ${index + 1}`;
+        streamSelect.appendChild(opt);
+      });
+
+     // 🟢 Recuperar última selección guardada (y reproducir automáticamente)
+const lastSelected = localStorage.getItem("ultimoCanalSeleccionado");
+
+// ✅ Si estamos restaurando pausa desde TIEMPO DE PAUSA, NO hacemos autoplay aquí.
+// (La restauración se encarga de seleccionar el video y aplicar currentTime)
+if (localStorage.getItem("forzarRestauracionPausa") === "true") {
+  console.log("⛔ Autoplay bloqueado por restauración de pausa");
+} else {
+
+  
+
+// 🛑 BLOQUEO DEFINITIVO DE AUTOPLAY SI EXISTE TIEMPO DE PAUSA
+const hayPausaPendiente =
+  localStorage.getItem("forzarRestauracionPausa") === "true";
+
+// Si hay pausa pendiente, NO ejecutar ningún autoplay
+if (hayPausaPendiente) {
+  console.log("⛔ Autoplay bloqueado por TIEMPO DE PAUSA pendiente");
+  return; // 🔴 CORTA AQUÍ el flujo
+}
+
+
+// ▶ Autoplay normal SOLO cuando no hay pausa pendiente
+
+
+
+  // Si hay un último canal guardado, lo seleccionamos y reproducimos
+  if (lastSelected && list.some(v => v.url === lastSelected)) {
+    streamSelect.value = lastSelected;
+    reproducirVideoSeleccionado(lastSelected);
+  }
+  // Si no hay uno guardado, reproducimos el primero disponible automáticamente
+  else if (list.length > 0) {
+    const primerCanal = list[0].url;
+    streamSelect.value = primerCanal;
+    localStorage.setItem("ultimoCanalSeleccionado", primerCanal);
+    reproducirVideoSeleccionado(primerCanal);
+  }
+
+}
+
+// 🔁 Restaurar pausa desde TIEMPO DE PAUSA al entrar con sesión iniciada
+try {
+  // Evitamos ejecutar más de una vez por carga de página
+  if (!localStorage.getItem("pausaRestauradaEnEstaSesion")) {
+    localStorage.setItem("pausaRestauradaEnEstaSesion", "true");
+
+    // Solo si la función existe (ya está definida más arriba en tu script)
+    if (typeof restaurarPausaDesdeSheet === "function") {
+      restaurarPausaDesdeSheet();
+    }
+  }
+} catch (e) {
+  console.warn("No se pudo ejecutar restaurarPausaDesdeSheet al iniciar index:", e);
+}
+
+
+// 🟣 Evento: cuando el usuario cambia de canal → reproducir automáticamente
+streamSelect.addEventListener("change", () => {
+  const url = streamSelect.value.trim();
+  if (!url) {
+    contenedor.style.display = "none";
+    return;
+  }
+  localStorage.setItem("ultimoCanalSeleccionado", url);
+  reproducirVideoSeleccionado(url);
+});
+
+
+      // Función interna de reproducción
+      function reproducirVideoSeleccionado(url) {
+        video.style.display = "none";
+        iframe.style.display = "none";
+
+        const isVideo = url.match(/\.(mp4|mov|webm|ogg)$/i);
+        const isStream =
+    url.includes("youtube.com") ||
+    url.includes("youtu.be") ||
+    url.includes("facebook.com") ||
+    url.includes("rudo.video") ||
+    url.includes("relay") ||
+    url.includes("stream") ||
+    url.includes("player.twitch.tv") ||   // Twitch embed
+    url.includes("twitch.tv") ||          // Twitch normal
+    url.includes("drive.google.com");     // Google Drive
+
+        if (isVideo) {
+          source.src = url;
+          video.load();
+          video.play();
+          video.style.display = "block";
+          contenedor.style.display = "flex";
+        } else if (isStream) {
+          iframe.src = url;
+          iframe.style.display = "block";
+          contenedor.style.display = "flex";
+        } else {
+          contenedor.innerHTML = `<p style="color:white;">Tipo de enlace no reconocido: ${url}</p>`;
+          contenedor.style.display = "flex";
+        }
+      }
+    }).getVideoList(); // ← carga transmisiones individuales
+  }).getContainerVisibility(); // ← aplica visibilidad global (D2)
+});
+
+// ============================================================
+// 🎬 PAUSA PERSISTENTE (entre cierres de sesión y dispositivos)
+// Guarda en hoja "TIEMPO DE PAUSA" del Sheet del usuario
+// ============================================================
+
+function getUrlActualContenedor() {
+  // Ajusta aquí SOLO si tú ya manejas una variable global con la URL actual.
+  // Si tu lógica actual ya tiene "urlActualVideo" o similar, úsala.
+  // Fallback: usar src del videoPlayer.
+  const videoPlayer = document.getElementById("videoPlayer");
+  if (!videoPlayer) return "";
+
+  // Si estás usando HLS, normalmente el src puede estar vacío; en ese caso usa tu variable global si existe.
+  // Aquí dejamos fallback seguro:
+  return (videoPlayer.currentSrc || videoPlayer.src || "").trim();
+}
+
+function guardarPausaEnSheet() {
+  try {
+    const sheetId = (localStorage.getItem("sheetId") || "").trim();
+    if (!sheetId) return;
+
+    const videoPlayer = document.getElementById("videoPlayer");
+    if (!videoPlayer) return;
+    if (videoPlayer.style.display === "none") return;
+
+    const url = getUrlActualContenedor();
+    const tiempo = Number(videoPlayer.currentTime || 0);
+
+    // Si no hay URL real, no guardamos
+    if (!url) return;
+
+    google.script.run.guardarTiempoPausa(sheetId, url, tiempo);
+  } catch (e) {
+    console.warn("guardarPausaEnSheet falló:", e);
+  }
+}
+
+function restaurarPausaDesdeSheet() {
+  try {
+    const sheetId = (localStorage.getItem("sheetId") || "").trim();
+    if (!sheetId) return;
+
+    // ✅ Bloquea autoplay del selector mientras restauramos
+    localStorage.setItem("forzarRestauracionPausa", "true");
+
+    google.script.run.withSuccessHandler((data) => {
+      try {
+        if (!data || !data.url) {
+          localStorage.removeItem("forzarRestauracionPausa");
+          return;
+        }
+
+        const urlGuardada = String(data.url || "").trim();
+        const tiempoGuardado = Number(data.tiempo || 0);
+
+        // ✅ 1) Intentar restaurar usando el selector (misma lógica normal del contenedor)
+        const streamSelect = document.getElementById("streamSelect");
+        const existeEnSelect =
+          streamSelect &&
+          Array.from(streamSelect.options).some(o => (o.value || "").trim() === urlGuardada);
+
+        if (existeEnSelect) {
+          streamSelect.value = urlGuardada;
+          streamSelect.dispatchEvent(new Event("change"));
+        } else {
+          // ✅ 2) Fallback: reproducir directo (MP4/HLS) con tu función existente
+          reproducirVideo(urlGuardada);
+        }
+
+        const videoPlayer = document.getElementById("videoPlayer");
+        if (!videoPlayer) {
+          localStorage.removeItem("forzarRestauracionPausa");
+          return;
+        }
+
+        const onMeta = () => {
+          try {
+            videoPlayer.currentTime = Math.max(0, tiempoGuardado || 0);
+            videoPlayer.pause(); // ✅ queda pausado al entrar
+          } catch (e) {}
+          videoPlayer.removeEventListener("loadedmetadata", onMeta);
+          localStorage.removeItem("forzarRestauracionPausa");
+        };
+
+        if (videoPlayer.readyState >= 1) onMeta();
+        else videoPlayer.addEventListener("loadedmetadata", onMeta);
+
+      } catch (e) {
+        localStorage.removeItem("forzarRestauracionPausa");
+        console.warn("Error restaurando pausa:", e);
+      }
+    }).obtenerTiempoPausa(sheetId);
+
+  } catch (e) {
+    console.warn("restaurarPausaDesdeSheet falló:", e);
+  }
+}
+
+// ✅ Guardar al pausar + al ocultar + antes de salir
+document.addEventListener("DOMContentLoaded", () => {
+  const videoPlayer = document.getElementById("videoPlayer");
+  if (videoPlayer) {
+    // (detalle mínimo) evita duplicar listeners si por alguna razón este bloque se pega 2 veces
+    videoPlayer.removeEventListener("pause", guardarPausaEnSheet);
+    videoPlayer.addEventListener("pause", guardarPausaEnSheet);
+  }
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) guardarPausaEnSheet();
+  });
+
+  window.addEventListener("beforeunload", guardarPausaEnSheet);
+
+  // ✅ restaurar una sola vez al entrar
+  restaurarPausaDesdeSheet();
+});
+
+</script>
+
+
+
+  <div id="logoContainer" 
+     style="display:none; width:851px; height:315px; margin:40px auto; 
+            align-items:center; justify-content:center;">
+  <img id="logo" src="URL_DEL_LOGO" alt="Logo"
+       style="width:80%; height:80%; object-fit:cover; clip-path: inset(0 round 30px); box-shadow:0 0 15px rgba(0,0,0,0.5);">
+</div>
+
+  <h2>Registro Movimientos de Dineros</h2>
+  <label for="mesSelect">Mes:</label>
+  <select id="mesSelect"></select>
+
+  <label for="itemSelect">Ítem del mes:</label>
+<select id="itemSelect">
+
+  <option value="ITEM">Ítem</option>
+
+</select>
+
+ <h3 style="color:#fff; font-family:'Orbitron', sans-serif; font-size:30px; margin-bottom:15px; text-shadow:0 0 8px #7b00ff;">
+    Resumen Dineros Mensual Por Item
+  </h3>
+<!-- Pantalla estilo Gameboy para detalle del ítem -->
+<div style="display:flex; flex-direction:column; align-items:center; justify-content:center; margin-top:20px;">
+  <div class="pantalla-gameboy" id="pantallaItem">
+    <div id="contenidoItem"></div>
+  </div>
+
+  <!-- Botón Calculadora debajo de la pantalla Gameboy -->
+<div style="text-align:center; margin-top:20px;">
+<!-- Botón Calculadora -->
+<button class="btn-calculadora" onclick="abrirCalculadora()">
+  <span class="btn-calculadora__label">CALCULADORA</span>
+</button>
+
+
+
+</div>
+
+
+</div>
+
+
+  <label for="ingreso">Ingresar dinero:</label>
+  <input id="ingreso" type="number" placeholder="$0.00">
+
+  <label for="gasto">Descontar dinero:</label>
+  <input id="gasto" type="number" placeholder="$0.00">
+
+  <label for="boleta">Subir boleta (opcional):</label>
+  <input id="boleta" type="file" accept="image/*">
+
+  <div>
+    <button onclick="registrarMovimientoCompleto()">REGISTRAR</button>
+    <button onclick="ejecutarResetSaldo()">Resetear saldo Ítem</button>
+ <button onclick="window.top.location.href='https://script.google.com/macros/s/AKfycbzJ99cD95kiTpWQeNqEK0iX2HLmseOfkeHGKZp-IVwt4tfMvNWUTTZ-MIduOc4j1-xmog/exec?page=misboletas'">
+  MIS BOLETAS
+</button>
+
+
+  </div>
+</div>
+
+<!-- Gestión Ítems -->
+<div class="card">
+
+
+
+
+ <h2>Gestión de Ítems</h2>
+  <label for="nuevoItem">Agregar nuevo ítem:</label>
+  <input id="nuevoItem" type="text" placeholder="Nombre del ítem">
+  <button onclick="agregarItem()">Agregar Ítem</button>
+
+  <label for="eliminarItemSelect">Eliminar ítem:</label>
+  <select id="eliminarItemSelect"></select>
+  <button onclick="eliminarItem()" 
+        style="margin:20px auto 30px auto; display:block;">
+  Eliminar Ítem
+</button>
+
+
+
+<!-- Botón WhatsApp debajo de indicadores -->
+<div id="whatsapp-btn" onclick="abrirWhatsapp()" 
+     style="display:flex; flex-direction:column; align-items:center; justify-content:center; margin:60px auto; cursor:pointer;">
+  <img src="https://upload.wikimedia.org/wikipedia/commons/6/6b/WhatsApp.svg" alt="WhatsApp"
+       style="width:65px; height:65px; filter: drop-shadow(0 0 8px #00ff00);">
+  <div class="whatsapp-text" 
+       style="text-align:center; font-family:'Orbitron', sans-serif; font-size:40px; font-weight:bold; margin-top:8px; background:linear-gradient(to right,#00f7ff,#8000c8); -webkit-background-clip:text; -webkit-text-fill-color:transparent;">
+    <span class="arrow" 
+          style="display:block; font-size:28px; background:linear-gradient(to right,#00f7ff,#8000c8); -webkit-background-clip:text; -webkit-text-fill-color:transparent; margin-bottom:8px; animation:bounce 1s infinite;">
+      ⬆
+    </span>
+    Para ayuda o consultas, <br> ¡pinche aquí!
+  </div>
+</div>
+
+
+<!-- Modal WhatsApp -->
+<div id="whatsapp-modal" class="custom-modal"
+     onclick="if (event.target === this) cerrarModal('whatsapp-modal')">
+  <div class="modal-content">
+    <h2>Responderemos a la brevedad</h2>
+    
+    <!-- ✔ ÚNICO botón que quieres mantener -->
+    <button onclick="enviarMensajeWSP(1)">Necesito ayuda con la aplicación</button>
+
+    <span class="close-btn" onclick="cerrarModal('whatsapp-modal')">×</span>
+  </div>
+</div>
+
+
+</div>
+
+
+
+<div id="paginas-modal" class="custom-modal"
+     onclick="if (event.target === this) cerrarModal('paginas-modal')">
+  <div class="modal-content">
+    <span class="close-btn" onclick="cerrarModal('paginas-modal')">×</span>
+
+    <h2>Ir a:</h2>
+
+    <!-- ✅ Control Gastos Negocio -->
+    <button id="btnControlGastos" style="display:none;"
+      onclick="irAPagina(
+        'Control Gastos Negocio',
+        'https://script.google.com/macros/s/AKfycbzJ99cD95kiTpWQeNqEK0iX2HLmseOfkeHGKZp-IVwt4tfMvNWUTTZ-MIduOc4j1-xmog/exec?page=controlgastosnegocio'
+      )">
+      Control Gastos Negocio
+    </button>
+
+    <!-- ✅ PANEL DE CONTROL -->
+    <button id="btnControlPanel" style="display:none;"
+      onclick="irAPagina(
+        'PANEL DE CONTROL',
+        'https://script.google.com/macros/s/AKfycbzJ99cD95kiTpWQeNqEK0iX2HLmseOfkeHGKZp-IVwt4tfMvNWUTTZ-MIduOc4j1-xmog/exec?page=control'
+      )">
+      PANEL DE CONTROL
+    </button>
+
+    <!-- ✅ Tienda -->
+    <button id="btnTienda" style="display:none;"
+      onclick="irAPagina(
+        'Tienda',
+        'https://script.google.com/macros/s/AKfycbzJ99cD95kiTpWQeNqEK0iX2HLmseOfkeHGKZp-IVwt4tfMvNWUTTZ-MIduOc4j1-xmog/exec?page=tienda'
+      )">
+      Tienda
+    </button>
+
+    <!-- ✅ Mis Compras -->
+    <button id="MisCompras" style="display:none;"
+      onclick="irAPagina(
+        'Mis Compras',
+        'https://script.google.com/macros/s/AKfycbzJ99cD95kiTpWQeNqEK0iX2HLmseOfkeHGKZp-IVwt4tfMvNWUTTZ-MIduOc4j1-xmog/exec?page=miscompras'
+      )">
+      Mis Compras
+    </button>
+
+    <!-- ✅ ¿Cómo van mis finanzas? -->
+    <button
+      onclick="irAPagina(
+        '¿Cómo van mis finanzas?',
+        'https://script.google.com/macros/s/AKfycbzJ99cD95kiTpWQeNqEK0iX2HLmseOfkeHGKZp-IVwt4tfMvNWUTTZ-MIduOc4j1-xmog/exec?page=finanzas'
+      )">
+      ¿Cómo van mis finanzas?
+    </button>
+
+    <!-- ✅ Mi Negocio -->
+    <button id="btnNegocio" style="display:none;"
+      onclick="irAPagina(
+        'Mi Negocio',
+        'https://script.google.com/macros/s/AKfycbzJ99cD95kiTpWQeNqEK0iX2HLmseOfkeHGKZp-IVwt4tfMvNWUTTZ-MIduOc4j1-xmog/exec?page=negocio'
+      )">
+      Mi Negocio
+    </button>
+
+    <!-- ✅ Cambiar diseño páginas -->
+    <button
+      onclick="irAPagina(
+        'Cambiar diseño páginas',
+        'https://script.google.com/macros/s/AKfycbzJ99cD95kiTpWQeNqEK0iX2HLmseOfkeHGKZp-IVwt4tfMvNWUTTZ-MIduOc4j1-xmog/exec?page=cambiardiseño'
+      )">
+      Cambiar diseño páginas
+    </button>
+
+    <!-- ✅ Visor de Imágenes IA -->
+    <button id="btnVisorImagenes" style="display:none;"
+      onclick="irAPagina(
+        'Cambiar Estilo de Imágenes (IA)',
+        'https://script.google.com/macros/s/AKfycbzJ99cD95kiTpWQeNqEK0iX2HLmseOfkeHGKZp-IVwt4tfMvNWUTTZ-MIduOc4j1-xmog/exec?page=visorimagenes'
+      )">
+      🎨 Cambiar Estilo de Imágenes (IA)
+    </button>
+
+    <!-- 🔴 ESTOS NO SE TOCAN (porque no son "ir a página") -->
+    <button onclick="cerrarSesion()">Cerrar Sesión</button>
+    <button onclick="enviarRespaldo()">Respaldar toda mi información</button>
+    <button onclick="abrirModalRecordatorio()">🕒 Agregar Recordatorio</button>
+  </div>
+</div>
+
+
+<!-- 🕒 Modal para agregar recordatorio avanzado -->
+<div id="recordatorio-modal" class="custom-modal"
+     onclick="if (event.target === this) cerrarModal('recordatorio-modal')">
+  <div class="modal-content">
+    <span class="close-btn" onclick="cerrarModal('recordatorio-modal')">×</span>
+    <h2>Agregar Recordatorio Programado</h2>
+
+    <label for="recordatorioTexto">📋 Escriba su recordatorio:</label>
+    <input id="recordatorioTexto" type="text" placeholder="Ej: Pagar luz" 
+           style="width:90%; font-size:30px; margin-bottom:15px;">
+
+    <label for="recordatorioFecha">📅 Fecha:</label>
+    <input id="recordatorioFecha" type="date" 
+           style="width:90%; font-size:28px; margin-bottom:15px;">
+
+    <label for="recordatorioHora">🕒 Hora:</label>
+    <input id="recordatorioHora" type="time" 
+           style="width:90%; font-size:28px; margin-bottom:15px;">
+
+    <label for="recordatorioDuracion">⏱️ Duración visible (minutos):</label>
+    <input id="recordatorioDuracion" type="number" placeholder="5" 
+           style="width:90%; font-size:28px; margin-bottom:15px;">
+
+    <label for="recordatorioRepetir">🔁 Repetir:</label>
+    <select id="recordatorioRepetir" style="width:90%; font-size:28px; margin-bottom:25px;">
+      <option value="ninguno">No repetir</option>
+      <option value="diario">Cada día</option>
+      <option value="semanal">Cada semana</option>
+    </select>
+
+    <button onclick="guardarRecordatorioProgramado()">💾 Guardar Recordatorio</button>
+  </div>
+</div>
+
+
+<!-- Modal Calculadora -->
+<div id="calculadora-modal" class="custom-modal"
+     onclick="if (event.target === this) cerrarModal('calculadora-modal')">
+  <div class="modal-content" style="max-width:700px; position:relative;">
+    <span class="close-btn" onclick="cerrarModal('calculadora-modal')">×</span>
+    <h2>Calculadora</h2>
+    <input type="text" id="calc-display" disabled 
+           style="width:95%; font-size:50px; text-align:right; margin-bottom:15px; padding:10px;">
+
+    <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:25px;">
+      <button onclick="calcInput('7')">7</button>
+      <button onclick="calcInput('8')">8</button>
+      <button onclick="calcInput('9')">9</button>
+      <button onclick="calcInput('/')">÷</button>
+
+      <button onclick="calcInput('4')">4</button>
+      <button onclick="calcInput('5')">5</button>
+      <button onclick="calcInput('6')">6</button>
+      <button onclick="calcInput('*')">×</button>
+
+      <button onclick="calcInput('1')">1</button>
+      <button onclick="calcInput('2')">2</button>
+      <button onclick="calcInput('3')">3</button>
+      <button onclick="calcInput('-')">−</button>
+
+      <button onclick="calcInput('0')">0</button>
+      <button onclick="calcInput('.')">.</button>
+      <button onclick="calcInput('%')">%</button>
+      <button onclick="calcInput('+')">+</button>
+   
+      <button onclick="calcClear()">AC</button>
+               <button onclick="calcSqrt()">√</button>
+               <button onclick="calcMS()">MS</button>
+      <button onclick="calcMR()">MR</button>
+      
+
+
+
+
+      <button onclick="calcBack()" style="grid-column:span 2;">⌫</button>
+      <button onclick="calcCalculate()" style="grid-column:span 2;">=</button>
+    </div>
+  </div>
+</div>
+
+
+
+<div id="alertaPersonalizada" style="display: none;"></div>
+<script>
+
+
+  // ✅ Mapa global de overrides de URL
+  let mapaPaginas = {};
+
+  // ✅ Cargar el mapa desde Apps Script al iniciar la página
+  function cargarMapaPaginas() {
+    google.script.run
+      .withSuccessHandler(function(mapa) {
+        mapaPaginas = mapa || {};
+      })
+      .obtenerMapaPaginas();
+  }
+
+  // ✅ Función única para ir a una página
+  // nombreBoton = texto que pondrás en la columna A de "IR A PAGINA"
+  // urlPorDefecto = la URL que hoy ya usas en el onclick
+  function irAPagina(nombreBoton, urlPorDefecto) {
+    try {
+      const clave = (nombreBoton || "").toString().trim().toUpperCase();
+      let urlFinal = urlPorDefecto;
+
+      if (mapaPaginas && mapaPaginas[clave]) {
+        urlFinal = mapaPaginas[clave];
+      }
+
+      if (urlFinal) {
+        window.top.location.href = urlFinal;
+      } else {
+        console.warn("No se encontró URL para:", nombreBoton);
+      }
+    } catch (e) {
+      console.error("Error en irAPagina:", e);
+      // En caso de error, intentamos al menos ir a la URL por defecto
+      if (urlPorDefecto) {
+        window.top.location.href = urlPorDefecto;
+      }
+    }
+  }
+
+  
+
+// ✅ Obtener URL final de LOGIN (usa hoja IR A PAGINA si existe override)
+function obtenerUrlLoginFinal() {
+  const urlPorDefecto = "https://script.google.com/macros/s/AKfycbzJ99cD95kiTpWQeNqEK0iX2HLmseOfkeHGKZp-IVwt4tfMvNWUTTZ-MIduOc4j1-xmog/exec?page=login";
+
+  try {
+    // El nombre debe coincidir con la columna A en "IR A PAGINA"
+    const clave = "Cerrar Sesión".toUpperCase(); // "CERRAR SESIÓN"
+
+    if (mapaPaginas && mapaPaginas[clave]) {
+      return mapaPaginas[clave];  // URL nueva desde la hoja
+    }
+  } catch (e) {
+    console.warn("Error obteniendo URL de login desde mapaPaginas:", e);
+  }
+
+  // Si no hay override o algo falla → usa la URL de siempre
+  return urlPorDefecto;
+}
+
+
+// 🔹 Logo dinámico (Index)
+function cargarLogo() {
+  const usuario = (localStorage.getItem("userName") || "").trim();
+  const sheetId = (localStorage.getItem("sheetId") || "").trim();
+
+  google.script.run.withSuccessHandler(respuesta => {
+    try {
+      const data = (typeof respuesta === "string") ? JSON.parse(respuesta) : respuesta;
+      const box = document.getElementById("logoContainer");
+
+      if (data.mostrar && data.url) {
+        box.style.display = "flex";
+        box.innerHTML = `<img src="${data.url}" alt="Logo"
+                          style="width:851px; height:315px; object-fit:contain;">`;
+      } else {
+        box.style.display = "none";
+        box.innerHTML = "";
+      }
+    } catch(e) {
+      console.error("Error cargarLogo:", e);
+      const box = document.getElementById("logoContainer");
+      box.style.display = "none";
+      box.innerHTML = "";
+    }
+  }).obtenerLogoPaginaUsuario(usuario, "INDEX", sheetId)
+;
+}
+
+
+
+// ... (todo tu JavaScript actual: sesión, indicadores, movimientos, etc.)
+
+document.addEventListener("DOMContentLoaded", () => {
+  verificarSesion();
+  cargarLogo();
+  cargarFirma();
+  cargarMeses();
+  cargarItems();
+  aplicarVisibilidadPaginas(); 
+  cargarPantallaLED();
+  cargarMapaPaginas(); 
+  restaurarPausaDesdeSheet();
+
+document.getElementById("itemSelect").addEventListener("change", () => {
+  const mes = document.getElementById("mesSelect").value;
+  const item = (document.getElementById("itemSelect").value || "").trim();
+  const pantalla = document.getElementById("contenidoItem");
+
+  // ✅ SIEMPRE LOGO cuando el ítem es ITEM
+  if (!item || item.toUpperCase() === "ITEM") {
+    pantalla.innerHTML = `
+      <div style="
+        width:100%;
+        height:100%;
+        display:flex;
+        align-items:center;
+        justify-content:center;
+      ">
+        <img src="https://i.imgur.com/tpJr7Xm.png"
+              style="
+       max-width: 40%;
+       max-height: 40%;
+       object-fit: contain;
+       display: block;
+       margin: auto;
+       image-rendering: crisp-edges;
+       image-rendering: pixelated;
+       user-select:none;
+     ">
+      </div>
+    `;
+    return; // ✅ BLOQUEAMOS cualquier carga de datos
+  }
+
+  // ✅ Si es otro ítem → mostrar datos normales
+  if (mes && item) cargarDetalleItem(mes, item);
+});
+
+
+
+
+  // ✅ Diferenciar roles (admin vs usuario)
+const isAdmin = localStorage.getItem("isAdmin") === "true";
+
+const btnNegocio        = document.getElementById("btnNegocio");
+const btnControlGastos  = document.getElementById("btnControlGastos");
+const btnVisorImagenes  = document.getElementById("btnVisorImagenes");
+const btnControlPanel   = document.getElementById("btnControlPanel"); // 👈 NUEVO
+
+if (!isAdmin) {
+  // Usuarios normales → NO ven estos botones
+  if (btnNegocio)       btnNegocio.style.display       = "none";
+  if (btnControlGastos) btnControlGastos.style.display = "none";
+  if (btnVisorImagenes) btnVisorImagenes.style.display = "none";
+  if (btnControlPanel)  btnControlPanel.style.display  = "none"; // 👈 SE OCULTA
+}
+// Si isAdmin === true, NO tocamos nada → tú ves el botón normalmente
+
+});
+
+// ✅ Sesión
+function verificarSesion() {
+  if (localStorage.getItem("usuarioLogueado") !== "true") {
+    window.top.location.replace(
+      "https://script.google.com/macros/s/AKfycbzJ99cD95kiTpWQeNqEK0iX2HLmseOfkeHGKZp-IVwt4tfMvNWUTTZ-MIduOc4j1-xmog/exec?page=login"
+    );
+  }
+}
+
+function cerrarSesion() {
+  try {
+    const usuarioActual =
+      localStorage.getItem("usuarioActivo") ||
+      localStorage.getItem("userName");
+
+    // ====================================================
+    // ✅ NUEVO: guardar pausa del video ANTES de cerrar sesión
+    // (NO altera ninguna lógica existente)
+    // ====================================================
+    try {
+      if (typeof guardarPausaEnSheet === "function") {
+        guardarPausaEnSheet();
+      }
+    } catch (e) {
+      console.warn("No se pudo guardar la pausa al cerrar sesión:", e);
+    }
+
+    // 🔹 Registrar al usuario como OFFLINE antes de eliminar sus datos
+    if (usuarioActual) {
+      google.script.run.registrarOffline(usuarioActual);
+    }
+
+    // 🔹 Guardar estilos personales antes de limpiar la sesión
+    const estilosUsuario = {};
+    if (usuarioActual) {
+      for (const clave of Object.keys(localStorage)) {
+        if (
+          clave.startsWith(`theme_${usuarioActual}`) ||
+          clave.startsWith(`tipografia_${usuarioActual}`)
+        ) {
+          estilosUsuario[clave] = localStorage.getItem(clave);
+        }
+      }
+    }
+
+    // 🔹 Eliminar solo los datos de sesión
+    const clavesSesion = [
+      "usuarioActivo",
+      "usuarioLogueado",
+      "correoActivo",
+      "sheetId",
+      "carpetaId",
+      "isAdmin",
+      "userName"
+    ];
+    clavesSesion.forEach(k => localStorage.removeItem(k));
+
+    // 🔹 Restaurar estilos del usuario
+    for (const clave in estilosUsuario) {
+      localStorage.setItem(clave, estilosUsuario[clave]);
+    }
+
+    // 🔹 Asegurar que quede marcada la sesión como cerrada
+    localStorage.setItem("usuarioLogueado", "false");
+
+    // 🔹 Intentar mostrar alerta, si existe
+    try {
+      if (typeof mostrarAlerta === "function") {
+        mostrarAlerta("👋 Has cerrado sesión correctamente.");
+      }
+    } catch (e) {
+      console.warn("mostrarAlerta falló:", e);
+    }
+
+    // 🔹 Usar la URL final (override o por defecto)
+    const urlLogin = obtenerUrlLoginFinal();
+
+    // 🔹 Esperar un instante para que se vea la alerta
+    setTimeout(() => {
+      google.script.run
+        .withSuccessHandler(() => {
+          window.location.href = urlLogin;
+        })
+        .dummy(); // función vacía del servidor
+    }, 300);
+
+  } catch (error) {
+    console.error("Error en cerrarSesion:", error);
+
+    // 🔹 Mantener la lógica de IR A PAGINA (fallback)
+    irAPagina(
+      "Cerrar Sesión",
+      "https://script.google.com/macros/s/AKfycbzJ99cD95kiTpWQeNqEK0iX2HLmseOfkeHGKZp-IVwt4tfMvNWUTTZ-MIduOc4j1-xmog/exec?page=login"
+    );
+  }
+}
+
+
+// ============================================================
+// 🔹 PANTALLA LED — versión mejorada y adaptada a ControlGastoNegocio
+// ============================================================
+
+let textoLED = "";
+let firmaHTML = "";
+
+// ✅ Cargar la firma (usa mismo backend que index)
+function cargarFirma() {
+  const usuario = (localStorage.getItem("userName") || "").trim();
+  google.script.run.withSuccessHandler(respuesta => {
+    try {
+      const data = (typeof respuesta === "string") ? JSON.parse(respuesta) : respuesta;
+      if (data.mostrar && data.url) {
+        firmaHTML = `<img src="${data.url}" alt="Firma" style="width:180px; height:auto; margin-right:15px; vertical-align:middle; filter:drop-shadow(0 0 6px #fff);">`;
+      } else firmaHTML = "";
+    } catch {
+      firmaHTML = "";
+    }
+  }).obtenerLogo("FIRMA", usuario);
+}
+
+// ============================================================
+// 🔹 CARGA PRINCIPAL
+// ============================================================
+
+// 🔹 Cargar texto dinámico en la pantalla LED (respeta reglas + firma + usuario)
+function cargarPantallaLED() {
+  const page = document.body.getAttribute("data-page") || "index";
+  const usuario = (localStorage.getItem("userName") || "").trim();
+
+  google.script.run.withSuccessHandler(function(texto) {
+    const contenedor = document.getElementById("indicadores");
+    textoLED = texto; // ← mantiene tal cual lo que devuelve Code.gs (incluye "INDICADORES" cuando corresponde)
+
+    // Asegura existencia del span destino
+    if (!document.getElementById("ledContent")) {
+      contenedor.innerHTML = '<span id="ledContent"></span>';
+    }
+    const led = document.getElementById("ledContent");
+
+ if ((texto || "").toUpperCase().startsWith("INDICADORES")) {
+  // 0) Captura "extra" tras la palabra INDICADORES (p.ej. un GIF que pusiste al lado)
+  const extra = texto.slice("INDICADORES".length).trim();
+
+  // Helper para extraer URLs de imagen desde un HTML generado (<img src="...">)
+  function collectImgSrc(html) {
+    const out = [];
+    if (!html) return out;
+    const re = /<img[^>]+src="([^"]+)"/gi;
+    let m;
+    while ((m = re.exec(html)) !== null) out.push(m[1]);
+    return out;
+  }
+
+  // 1) Pide valores de indicadores
+  google.script.run.withSuccessHandler(data => {
+    if (!document.getElementById("ledContent")) {
+      contenedor.innerHTML = '<span id="ledContent"></span>';
+    }
+    const led = document.getElementById("ledContent");
+
+    const dolar = (data && data.dolar != null) ? Number(data.dolar).toLocaleString("es-CL") : "-";
+    const uf    = (data && data.uf    != null) ? Number(data.uf   ).toLocaleString("es-CL") : "-";
+    const utm   = (data && data.utm   != null) ? Number(data.utm  ).toLocaleString("es-CL") : "-";
+
+    // 2) Base: firma + indicadores + , usuario
+    let baseHTML = `
+      ${firmaHTML ? (firmaHTML + ' ') : ''} 
+      💲 Dólar: $${dolar} |
+      🧾 UF: $${uf} |
+      📊 UTM: $${utm}
+      ${usuario ? `, ${usuario}` : ""}
+    `.trim();
+
+    // 3) Pide adjuntos (Fila 2/3) y construye imágenes ÚNICAS combinando extra+adjuntos
+    google.script.run.withSuccessHandler(adjuntosStr => {
+      const set = new Set();
+
+      // a) Imágenes del "extra" al lado de INDICADORES
+      if (extra) {
+        const { imagesHTML: imgExtra } = splitTextAndImageUrls(extra);
+        collectImgSrc(imgExtra).forEach(u => set.add(u));
+      }
+
+      // b) Imágenes desde Fila 2/3 (función auxiliar del backend)
+      const adj = (adjuntosStr || "").trim();
+      if (adj) {
+        const { imagesHTML: imgAdj } = splitTextAndImageUrls(adj);
+        collectImgSrc(imgAdj).forEach(u => set.add(u));
+      }
+
+      // c) Renderizar solo una vez cada imagen (sin duplicados)
+      if (set.size > 0) {
+        const uniqueImagesHTML = " " + Array.from(set).map(u => `<img src="${u}" alt="imagen">`).join(" ");
+        baseHTML = baseHTML.replace(
+          `${usuario ? `, ${usuario}` : ""}`,
+          `${uniqueImagesHTML} ${usuario ? `, ${usuario}` : ""}`
+        ).trim();
+      }
+
+      led.innerHTML = baseHTML;
+    }).obtenerAdjuntosPantalla(page, usuario);
+
+
+  }).getIndicadores();
+} else {
+  // Mensajes normales → firma + mensaje + imágenes (si hay) + ", Usuario"
+  if (!document.getElementById("ledContent")) {
+    contenedor.innerHTML = '<span id="ledContent"></span>';
+  }
+  actualizarPantallaLED(usuario);
+}
+
+
+
+  }).obtenerTextoPantalla(page, usuario);
+}
+
+// ✅ Render final de la pantalla LED
+function actualizarPantallaLED(usuario = "") {
+  const u = (usuario || localStorage.getItem("userName") || "").trim();
+  const contenedorLED = document.getElementById("indicadores");
+  if (!document.getElementById("ledContent")) {
+    contenedorLED.innerHTML = '<span id="ledContent"></span>';
+  }
+  const led = document.getElementById("ledContent");
+  const mensaje = textoLED || "";
+
+  // Detectar si hay videos
+  const videoLinks = (mensaje || "")
+    .split(/[\n,]+/)
+    .map(l => l.trim())
+    .filter(l => l && (l.includes(".mp4") || l.includes(".webm") || l.includes(".mov") || l.includes("youtube") || l.includes("youtu.be")));
+
+  // ⭐ 1) DETECTAR VIDEOS (tu lógica original)
+const esVideo = videoLinks.length > 0;
+
+// ⭐ 2) DETECTAR IMÁGENES EN BUCLE
+const imagenLinks = (mensaje || "")
+  .split(/[,]+/)
+  .map(x => x.trim())
+  .filter(x =>
+    /\.(jpg|jpeg|png|gif|webp)$/i.test(
+      x.split("(")[0].trim()
+    )
+  );
+const esImagen = imagenLinks.length > 0;
+
+
+/* ======================================================
+   🎬 SI ES VIDEO → SE MANTIENE EXACTAMENTE TU MODO VIDEO
+   ====================================================== */
+if (esVideo) {
+  contenedorLED.classList.add("modo-video");
+  contenedorLED.style.padding = "0px";
+  contenedorLED.style.overflow = "hidden";
+
+  reproducirVideosEnBucle(videoLinks);
+  return;
+}
+
+
+/* ============================================================
+   🖼️ SI ES IMAGEN → NUEVO MODO IMAGEN FULL SCREEN EN BUCLE
+   (idéntico comportamiento que los videos + texto desplazado)
+   ============================================================ */
+if (esImagen) {
+  contenedorLED.classList.add("modo-video");  // LED grande igual que video
+  contenedorLED.style.padding = "0px";
+  contenedorLED.style.overflow = "hidden";
+
+  reproducirImagenesEnBucle(imagenLinks);
+  return;
+}
+
+
+// ✅ SI NO ES VIDEO → VOLVER A TEXTO NORMAL
+contenedorLED.classList.remove("modo-video");
+contenedorLED.style.padding = "30px";
+  contenedorLED.style.overflow = "hidden";
+
+  const { textHTML, imagesHTML } = splitTextAndImageUrls(mensaje);
+
+  led.innerHTML = `
+    ${firmaHTML ? firmaHTML + ' ' : ''}
+    ${textHTML}
+    ${imagesHTML}
+    ${u ? `, ${u}` : ''}
+  `.trim();
+
+  led.style.animation = "scroll 16s linear infinite";
+}
+
+// ✅ FUNCIÓN FINAL – enlace solo en video o texto + mute funcional
+function reproducirVideosEnBucle(videoLinks) {
+  const contenedorLED = document.getElementById("indicadores");
+  let index = 0;
+
+  function reproducir() {
+    let link = videoLinks[index];
+    let videoURL = link;
+    let linkDestino = null;
+
+    if (link.includes("(") && link.includes(")")) {
+      const partes = link.split("(");
+      videoURL = partes[0].trim();
+      linkDestino = partes[1].replace(")", "").trim();
+    }
+    if (linkDestino && !/^https?:\/\//i.test(linkDestino)) {
+      linkDestino = "https://" + linkDestino;
+    }
+
+    contenedorLED.innerHTML = `
+      <div id="videoLED-container" style="
+  width:100%; 
+  height:350px;
+  display:flex; 
+  justify-content:center; 
+  align-items:center;
+  overflow:hidden; 
+  border-radius:18px;
+  background: repeating-linear-gradient(
+    to right,
+    rgba(0,0,0,0.95) 0px,
+    rgba(0,0,0,0.95) 2px,
+    rgba(40,40,40,0.95) 2px,
+    rgba(40,40,40,0.95) 4px
+  );
+  position:relative;
+">
+        <video id="videoLED" autoplay muted playsinline style="
+    width:auto;
+    height:350px;
+    max-width:100%;
+    object-fit:contain;
+    border:none;
+    cursor:pointer;
+  ">
+          <source src="${videoURL}">
+  </video>
+
+</div>
+
+
+        ${linkDestino ? `
+          <div id="textoClickVideo" style="
+            position:absolute;
+            bottom:15px;
+            overflow:hidden;
+            white-space:nowrap;
+            pointer-events:auto;
+            cursor:pointer;
+          ">
+            <span id="scrollTextVideo" style="
+              display:inline-block;
+              color:inherit;
+              font-family:'Orbitron',sans-serif;
+              font-size:22px;
+              font-weight:bold;
+              animation:scrollVideoText 25s linear infinite;
+              will-change:transform;
+              user-select:none;
+            ">
+              Pincha aquí para más información
+            </span>
+          </div>
+        ` : ""}
+      </div>
+    `;
+
+    const video = document.getElementById("videoLED");
+    const textoClick = document.getElementById("textoClickVideo");
+    const muteButton = document.getElementById("muteButton");
+    const icono = document.getElementById("iconoMute");
+
+    // ✅ Asegura que el texto se alinee correctamente
+    video.addEventListener("loadedmetadata", () => {
+      if (textoClick && video.clientWidth > 0) {
+        textoClick.style.width = video.clientWidth + "px";
+        textoClick.style.left = "50%";
+        textoClick.style.transform = "translateX(-50%)";
+      }
+    });
+
+    // ✅ Click solo en video o texto abre enlace
+    function abrirDestino() {
+      if (linkDestino) window.open(linkDestino, "_blank", "noopener,noreferrer");
+    }
+    if (textoClick && linkDestino)
+      textoClick.addEventListener("click", e => { e.stopPropagation(); abrirDestino(); });
+    if (video && linkDestino)
+      video.addEventListener("click", e => { e.stopPropagation(); abrirDestino(); });
+
+   
+    // ✅ Impide pausas
+    video.addEventListener("pause", () => video.play().catch(()=>{}));
+
+    // ✅ Bucle entre múltiples videos
+    video.onended = () => {
+      index = (index + 1) % videoLinks.length;
+      reproducir();
+    };
+  }
+
+  reproducir();
+}// 🎞️ Animación continua del texto dentro del video
+const styleScroll = document.createElement("style");
+styleScroll.textContent = `
+@keyframes scrollVideoText {
+  0% { transform: translateX(100%); }
+  100% { transform: translateX(-100%); }
+}
+`;
+document.head.appendChild(styleScroll);
+
+// ✅ MUTE del LED solo si hay video
+function activarMuteLED() {
+  const video = document.getElementById("videoLED");
+  const muteBtn = document.getElementById("muteButton");
+  const icono = document.getElementById("iconoMute");
+
+  if (!video || !muteBtn) return;
+
+  video.muted = true;
+  icono.textContent = "🔇";
+
+  forzarAutoplay(video);
+
+  // Tocando la pantalla LED se activa el sonido
+  video.addEventListener("click", () => {
+    video.muted = false;
+    icono.textContent = "🔊";
+    video.play().catch(()=>{});
+  });
+
+  // Botón mute manual
+  muteBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    video.muted = !video.muted;
+    icono.textContent = video.muted ? "🔇" : "🔊";
+    if (!video.muted) video.play().catch(()=>{});
+  });
+}
+
+// Se activa cuando aparece un nuevo video LED
+setTimeout(() => activarMuteLED(), 500);
+
+// ✅ Ejecutar cada vez que se renderiza un video en el LED
+document.addEventListener("DOMNodeInserted", () => {
+  if (document.getElementById("videoLED")) {
+    activarMuteLED();
+  }
+});
+
+
+
+
+// 🔒 Escapar HTML
+function escapeHTML(str) {
+  return String(str).replace(/[&<>"']/g, m => (
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[m]
+  ));
+}
+
+// 🖼️ ¿Es URL de imagen?
+function isImageUrl(url) {
+  return /\.(png|jpe?g|gif|webp|bmp|svg)(\?.*)?$/i.test(url);
+}
+
+// ✂️ Separa en "texto con links no-imagen" + "imágenes al final"
+function splitTextAndImageUrls(textoPlano) {
+  if (!textoPlano) return { textHTML: "", imagesHTML: "" };
+
+  const safe = escapeHTML(textoPlano);
+  const urlRegex = /(https?:\/\/[^\s<>"']+)/gi;
+  const imageTags = [];
+
+  let textWithLinks = safe.replace(urlRegex, (match) => {
+    const url = match.trim();
+    if (isImageUrl(url)) {
+      imageTags.push(`<img src="${url}" alt="imagen" />`);
+      return ""; // sacamos del texto para ponerla al final como imagen
+    }
+    // URL que no es imagen => queda como <a>
+    return `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`;
+  });
+
+  const imagesHTML = imageTags.length ? " " + imageTags.join(" ") : "";
+  return { textHTML: textWithLinks.trim(), imagesHTML };
+}
+
+
+// ⭐ NUEVO ⭐
+// 📌 Reproducir imágenes en bucle, igual que los videos LED
+function reproducirImagenesEnBucle(imagenLinks) {
+  const contenedorLED = document.getElementById("indicadores");
+
+  // --- CREAR SOLO UNA VEZ EL CONTENEDOR ---
+  contenedorLED.innerHTML = `
+    <div id="imgContainerLED" style="
+      width:100%; height:100%; 
+      display:flex; justify-content:center; align-items:center;
+      position:absolute; top:0; left:0;
+      overflow:hidden; cursor:pointer;">
+      <img id="imgLED" src="" style="
+        width:100%; height:100%; object-fit:cover; border:none;">
+    </div>
+
+    <div id="textoClickImagen" style="
+      position:absolute; bottom:10px; left:0; width:100%;
+      overflow:hidden; white-space:nowrap; pointer-events:auto;">
+      <span id="scrollTextImagen" style="
+        display:inline-block; padding-left:100%;
+        font-family:'Orbitron',sans-serif; font-size:26px;
+        font-weight:bold; animation:scrollTextImagen 18s linear infinite;">
+        Pincha aquí para más información
+      </span>
+    </div>
+  `;
+
+  const img = document.getElementById("imgLED");
+  const textoClick = document.getElementById("textoClickImagen");
+  const imgContainer = document.getElementById("imgContainerLED"); // 👈 nuevo
+
+  let index = 0;
+  let linkDestino = null;
+
+  function mostrarImagen() {
+    let item = imagenLinks[index];
+    linkDestino = null;
+
+    // formato:  imagen(URL.jpg)(https://destino.cl)
+    if (item.includes("(") && item.includes(")")) {
+      let partes = item.split("(");
+      item = partes[0].trim();
+      linkDestino = partes[1].replace(")","").trim();
+      if (!linkDestino.startsWith("http")) linkDestino = "https://" + linkDestino;
+    }
+
+    img.src = item;
+
+    // --- CLICK SI LA IMAGEN TIENE LINK ---
+    if (linkDestino) {
+      textoClick.style.display = "block";
+
+      // texto clickeable
+      textoClick.onclick = () => window.open(linkDestino, "_blank");
+
+      // 🔥 NUEVO: la imagen completa es clickeable
+      imgContainer.onclick = () => window.open(linkDestino, "_blank");
+      img.onclick = () => window.open(linkDestino, "_blank");
+
+    } else {
+      textoClick.style.display = "none";
+
+      // desactivar clics
+      textoClick.onclick = null;
+      imgContainer.onclick = null;
+      img.onclick = null;
+    }
+
+    index = (index + 1) % imagenLinks.length;
+    setTimeout(mostrarImagen, 4000); // 4 segundos por imagen
+  }
+
+  mostrarImagen();
+}
+
+
+
+
+
+// Meses e Ítems
+const meses = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+document.addEventListener("DOMContentLoaded", () => {
+  cargarMeses();
+  cargarItems();
+
+  // ✅ Forzar actualización inicial para que se muestre tu logo al inicio
+  setTimeout(() => {
+    document.getElementById("itemSelect").dispatchEvent(new Event("change"));
+  }, 400);
+});
+
+
+function cargarMeses() {
+  const select = document.getElementById("mesSelect");
+  select.innerHTML = "";
+  meses.forEach(m => {
+    const opt = document.createElement("option");
+    opt.value = m;
+    opt.text = m;
+    select.appendChild(opt);
+  });
+}
+function cargarItems() {
+  const mes = document.getElementById("mesSelect").value;
+  const sheetId = localStorage.getItem("sheetId") || null;
+
+  if (!mes) {
+    mostrarAlertaFuturista("Seleccione un mes antes de cargar ítems");
+    return;
+  }
+
+  // Guardar selección actual para intentar restaurarla después
+  const itemSelect = document.getElementById("itemSelect");
+  const eliminarSelect = document.getElementById("eliminarItemSelect");
+  const itemActual = itemSelect ? itemSelect.value : "";
+
+  google.script.run
+    .withSuccessHandler(items => {
+      // Vaciar selects
+      itemSelect.innerHTML = "";
+      if (eliminarSelect) eliminarSelect.innerHTML = "";
+
+      if (items && items.length > 0) {
+        // Poblar selects con las opciones recuperadas
+        items.forEach(item => {
+          itemSelect.appendChild(new Option(item, item));
+          if (eliminarSelect) eliminarSelect.appendChild(new Option(item, item));
+        });
+
+        // Si el ítem que el usuario tenía antes existe en la nueva lista, restaurarlo
+if (itemActual && items.includes(itemActual)) {
+  itemSelect.value = itemActual;
+
+  // ✅ Si el ítem seleccionado es ITEM → mostrar logo y NO cargar datos
+  if (itemActual.toUpperCase() === "ITEM") {
+    document.getElementById("itemSelect").dispatchEvent(new Event("change"));
+  } else {
+    cargarDetalleItem(mes, itemActual);
+  }
+
+} else {
+  // Si no existe, seleccionar la primera opción válida y actualizar
+  itemSelect.selectedIndex = 0;
+  const primerItem = itemSelect.value;
+
+  // ✅ También evitar carga si ese primer ítem es ITEM
+  if (primerItem && primerItem.toUpperCase() !== "ITEM") {
+    cargarDetalleItem(mes, primerItem);
+  } else {
+    document.getElementById("itemSelect").dispatchEvent(new Event("change"));
+  }
+}
+} else {
+  // No hay ítems
+  itemSelect.appendChild(new Option("No hay ítems", ""));
+  if (eliminarSelect) eliminarSelect.appendChild(new Option("No hay ítems", ""));
+  
+  // ✅ Si no hay datos → también mostrar logo, nunca texto feo
+  document.getElementById("contenidoItem").innerHTML = `
+    <div style="
+      width:40%;
+      height:40%;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+    ">
+      <img src="https://i.imgur.com/tpJr7Xm.png"
+           style="
+             width:40%;
+             height:40%;
+             object-fit:contain;
+             user-select:none;
+           ">
+    </div>
+  `;
+}
+})
+.withFailureHandler(err => {
+  mostrarAlerta("Error al cargar ítems: " + (err.message || err));
+})
+.obtenerItems(mes, sheetId);
+}
+
+
+
+// Registrar Movimiento
+function registrarMovimientoCompleto() {
+  const mes = document.getElementById("mesSelect").value;
+  const item = document.getElementById("itemSelect").value;
+  const ingreso = parseFloat(document.getElementById("ingreso").value) || 0;
+  const gasto = parseFloat(document.getElementById("gasto").value) || 0;
+  const fileInput = document.getElementById("boleta");
+
+  if (!mes || !item) {
+    mostrarAlertaFuturista("⚠️ Selecciona mes e ítem.");
+    return;
+  }
+
+  // Convertir boleta a base64 si existe
+  if (fileInput.files.length > 0) {
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      const base64 = e.target.result.split(",")[1];
+      google.script.run.withSuccessHandler(msg => {
+        mostrarAlertaFuturista(msg);
+
+        // 🔹 Refrescar datos del ítem en la pantalla Game Boy
+        cargarDetalleItem(mes, item);
+
+        // limpiar inputs
+        document.getElementById("ingreso").value = "";
+        document.getElementById("gasto").value = "";
+        fileInput.value = "";
+      }).registrarMovimientoConBoleta(mes, item, ingreso, gasto, base64,
+        localStorage.getItem("sheetId"), localStorage.getItem("carpetaId"));
+    };
+    reader.readAsDataURL(fileInput.files[0]);
+  } else {
+    google.script.run.withSuccessHandler(msg => {
+      mostrarAlertaFuturista(msg);
+
+      // 🔹 Refrescar datos del ítem en la pantalla Game Boy
+      cargarDetalleItem(mes, item);
+
+      // limpiar inputs
+      document.getElementById("ingreso").value = "";
+      document.getElementById("gasto").value = "";
+    }).registrarMovimientoConBoleta(mes, item, ingreso, gasto, null,
+      localStorage.getItem("sheetId"), localStorage.getItem("carpetaId"));
+  }
+}
+
+function limpiarCampos() {
+  document.getElementById("ingreso").value = "";
+  document.getElementById("gasto").value = "";
+  document.getElementById("boleta").value = "";
+}
+function agregarItem() {
+  const nuevoItem = document.getElementById("nuevoItem").value.trim();
+  const mes = document.getElementById("mesSelect").value;
+
+  // ⚡️ IDs dinámicos
+  const sheetId = localStorage.getItem("sheetId") || null;
+
+  if (nuevoItem) {
+    google.script.run
+      .withSuccessHandler(() => {
+        mostrarAlertaFuturista("Ítem agregado");
+        cargarItems();
+        document.getElementById("nuevoItem").value = "";
+      })
+      .withFailureHandler((err) => {
+        mostrarAlerta("Error al agregar ítem: " + err.message);
+      })
+      // 👇 se mantienen los parámetros originales (nuevoItem, mes),
+      // y se pasa sheetId de forma adicional
+      .agregarItem(nuevoItem, mes, sheetId);
+  }
+}
+
+function eliminarItem() {
+  const item = document.getElementById("eliminarItemSelect").value;
+  const mes = document.getElementById("mesSelect").value;
+
+  // ⚡️ IDs dinámicos
+  const sheetId = localStorage.getItem("sheetId") || null;
+
+  if (item && mes) {
+    google.script.run
+      .withSuccessHandler(() => {
+        mostrarAlertaFuturista("Ítem eliminado");
+        cargarItems();
+      })
+      .withFailureHandler((err) => {
+        mostrarAlerta("Error al eliminar ítem: " + err.message);
+      })
+      // 👇 parámetros originales (item, mes) + sheetId dinámico
+      .eliminarItem(item, mes, sheetId);
+  }
+}
+
+function enviarRespaldo() {
+  google.script.run.withSuccessHandler(function(respuesta) {
+    if (respuesta === "OK") {
+      mostrarAlertaFuturista("📦 Respaldo enviado exitosamente a su correo");
+    } else {
+      mostrarAlertaFuturista("❌ " + respuesta);
+    }
+  }).respaldarInformacionCompleta();
+}
+
+function aplicarVisibilidadPaginas() {
+  google.script.run.withSuccessHandler(paginas => {
+    // Control Gastos Negocio
+    if (paginas["CONTROL GASTOS NEGOCIO"] === false) {
+      document.getElementById("btnControlGastos").style.display = "none";
+    } else {
+      document.getElementById("btnControlGastos").style.display = "inline-block";
+    }
+
+    // Mi Negocio
+    if (paginas["NEGOCIO"] === false) {
+      document.getElementById("btnNegocio").style.display = "none";
+    } else {
+      document.getElementById("btnNegocio").style.display = "inline-block";
+    }
+
+    // 🎨 Visor de Imágenes IA
+    if (paginas["VISOR IMAGENES"] === false) {
+      document.getElementById("btnVisorImagenes").style.display = "none";
+    } else {
+      document.getElementById("btnVisorImagenes").style.display = "inline-block";
+    }
+  }).obtenerPaginasVisibles();
+}
+
+
+
+let numeroWhatsapp = "";
+google.script.run.withSuccessHandler(function(num){
+  if (typeof num === "string") numeroWhatsapp = num.replace(/\D/g, "");
+}).obtenerWhatsapp();
+
+
+function abrirWhatsapp() {
+  document.getElementById('whatsapp-modal').style.display = 'flex';
+}
+
+function enviarMensajeWSP(opcion) {
+  let mensaje = "";
+  if (opcion === 1) mensaje = "Hola, necesito ayuda con la aplicación.";
+  if (opcion === 2) mensaje = "Hola, quisiera comprar banners de animación.";
+  const url = "https://wa.me/" + numeroWhatsapp + "?text=" + encodeURIComponent(mensaje);
+  cerrarModal();
+  window.open(url, "_blank");
+}
+
+// --- Manejo unificado: actualizar pantalla GameBoy cuando cambie mes o ítem ---
+function actualizarPantallaGameBoy() {
+  const mes = document.getElementById("mesSelect").value;
+  const item = document.getElementById("itemSelect").value;
+  if (mes && item) {
+    // Usa la función existente que ya maneja la lógica de carga
+    cargarDetalleItem(mes, item);
+  }
+}
+
+
+// mesSelect: cuando cambie el mes, recargamos la lista de items para ese mes
+// y luego, si el ítem anterior existe en el nuevo mes, lo restauramos y actualizamos la pantalla.
+document.getElementById("mesSelect").addEventListener("change", function () {
+  const prevItem = document.getElementById("itemSelect").value || "";
+  const mes = document.getElementById("mesSelect").value;
+
+  // 1) recarga items para el mes seleccionado (función ya existente)
+  cargarItems();
+
+  // 2) tras una pequeña espera para que cargarItems haya poblado el select,
+  // intentamos restaurar el item previo y actualizar la pantalla.
+  // Si prefieres un enfoque más robusto, podemos convertir cargarItems en una versión que acepte callback.
+  setTimeout(() => {
+    const itemSelect = document.getElementById("itemSelect");
+    if (!itemSelect) return;
+
+    // Si el item previo existe en la nueva lista, mantenlo seleccionado
+    if (prevItem && Array.from(itemSelect.options).some(o => o.value === prevItem)) {
+      itemSelect.value = prevItem;
+    }
+    // Finalmente, actualizar la pantalla si ambos valores existen
+    const item = itemSelect.value;
+    if (mes && item) cargarDetalleItem(mes, item);
+  }, 350); // 350 ms suele ser suficiente; si tu conexión es lenta puedes subirlo a 600
+});
+
+
+function mostrarAlertaFuturista(mensaje) {
+  const alerta = document.createElement("div");
+  alerta.className = "alerta-futurista";
+  alerta.innerText = mensaje;
+  document.body.appendChild(alerta);
+  setTimeout(() => alerta.remove(), 4500);
+}function mostrarTablaGameboy(filas) {
+  const pantalla = document.getElementById('contenidoItem');
+  if (!filas || filas.length === 0) {
+    pantalla.innerHTML = "<span style='color:black'>NO SE ENCONTRARON DATOS</span>";
+    return;
+  }
+
+  let html = "<table class='table-gameboy'>";
+  filas.forEach((fila, index) => {
+    html += `<tr style="animation-delay:${index * 0.2}s;">`;
+    fila.forEach(celda => {
+      html += `<td>${celda}</td>`;
+    });
+    html += `</tr>`;
+  });
+  html += "</table>";
+
+  pantalla.innerHTML = html;
+}
+
+
+
+// Abrir modal WhatsApp
+function abrirWhatsapp() {
+  document.getElementById('whatsapp-modal').style.display = 'flex';
+}
+
+// Abrir modal Páginas
+function abrirPaginas() {
+  document.getElementById('paginas-modal').style.display = 'flex';
+}
+
+function cerrarModal(id) {
+  if (id) {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+    return;
+  }
+  ['whatsapp-modal', 'paginas-modal', 'calculadora-modal', 'recordatorio-modal'].forEach(mid => {
+  const el = document.getElementById(mid);
+  if (el && el.style.display !== 'none') el.style.display = 'none';
+});
+
+}
+
+
+// Cerrar con tecla ESC
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape') {
+    cerrarModal(); // sin id => cierra cualquiera que esté abierto
+  }
+});
+
+// ✅ Abrir calculadora (no borra; restaura el último valor)
+function abrirCalculadora() {
+  document.getElementById("calculadora-modal").style.display = "flex";
+  const last = localStorage.getItem("calcDisplayValue") || "";
+  document.getElementById("calc-display").value = last;
+}
+
+// ✅ Guardar el valor actual del display
+function saveCalc() {
+  const display = document.getElementById("calc-display");
+  if (display) localStorage.setItem("calcDisplayValue", display.value || "");
+}
+
+
+// ✅ Entrada por botones
+function calcInput(val) {
+  const display = document.getElementById("calc-display");
+  display.value += val;
+  saveCalc();
+}
+
+// ✅ Borrar todo (AC)
+function calcClear() {
+  const display = document.getElementById("calc-display");
+  display.value = "";
+  saveCalc();
+}
+
+// ✅ Borrar último dígito
+function calcBack() {
+  const display = document.getElementById("calc-display");
+  display.value = display.value.slice(0, -1);
+  saveCalc();
+}
+
+// ✅ Calcular
+function calcCalculate() {
+  const display = document.getElementById("calc-display");
+  try {
+    let expr = display.value;
+
+    // 🔹 Detectar expresiones como "5000 - 20%" o "5000 + 20%"
+    expr = expr.replace(/(\d+)\s*([\+\-])\s*(\d+)%/g, (match, num, op, percent) => {
+      const base = parseFloat(num);
+      const p = parseFloat(percent) / 100;
+      return op === "+" ? base + (base * p) : base - (base * p);
+    });
+
+    // 🔹 Convertir otros usos de % en "/100"
+    expr = expr.replace(/(\d+)%/g, (match, num) => parseFloat(num) / 100);
+
+    // ✅ Evaluar
+    display.value = Function('"use strict";return (' + expr + ")")();
+  } catch {
+    display.value = "Error";
+  }
+  saveCalc();
+}
+
+// ✅ Calcular raíz cuadrada del valor actual
+function calcSqrt() {
+  const display = document.getElementById("calc-display");
+  try {
+    display.value = Math.sqrt(parseFloat(display.value)) || "";
+  } catch {
+    display.value = "Error";
+  }
+  saveCalc();
+}
+
+// ✅ Guardar en memoria (MS)
+function calcMS() {
+  const display = document.getElementById("calc-display");
+  window.memoryStore = parseFloat(display.value) || 0;
+  mostrarAlertaFuturista("💾 Guardado en memoria: " + window.memoryStore);
+  saveCalc();
+}
+
+// ✅ Promedio
+function avg(...nums) {
+  const arr = nums.map(Number);
+  return arr.reduce((a, b) => a + b, 0) / arr.length;
+}
+
+// ✅ Compatibilidad con teclado físico (sin exigir foco en el display)
+document.addEventListener("keydown", function (e) {
+  const modal = document.getElementById("calculadora-modal");
+  const display = document.getElementById("calc-display");
+  if (!modal || modal.style.display !== "flex" || !display) return;
+
+  // Números y operadores
+  if ((e.key >= "0" && e.key <= "9") || ["+", "-", "*", "/", "."].includes(e.key)) {
+    display.value += e.key;
+    saveCalc();
+    e.preventDefault();
+    return;
+  }
+
+  // Enter = calcular
+  if (e.key === "Enter") {
+    calcCalculate();
+    e.preventDefault();
+    return;
+  }
+
+  // Backspace = borrar último
+  if (e.key === "Backspace") {
+    calcBack();
+    e.preventDefault();
+    return;
+  }
+
+  // C = clear, S = sqrt, M = MS (memoria)
+  const k = e.key.toLowerCase();
+  if (k === "c") { calcClear(); e.preventDefault(); return; }
+  if (k === "s") { calcSqrt();  e.preventDefault(); return; }
+  if (k === "m") { calcMS();    e.preventDefault(); return; }
+
+  // Escape = cerrar modal
+  if (e.key === "Escape") {
+    cerrarModal("calculadora-modal");
+    e.preventDefault();
+    return;
+  }
+});
+
+function cargarDetalleItem(mes, item, reset = false) {
+  const sheetId = localStorage.getItem("sheetId") || "";
+
+  if (reset) {
+    // Primero resetea el saldo en la hoja
+    google.script.run.withSuccessHandler(msg => {
+      mostrarAlertaFuturista(msg);
+
+      // Luego vuelve a leer el detalle SOLO de ese ítem
+      google.script.run.withSuccessHandler(detalle => {
+        renderizarPantallaItem(mes, item, detalle);
+      }).obtenerDetalleItem(mes, item, sheetId);
+
+    }).resetearSaldoItem(mes, item, sheetId);
+
+  } else {
+    // Caso normal: solo leer el detalle de ese ítem
+    google.script.run.withSuccessHandler(detalle => {
+      renderizarPantallaItem(mes, item, detalle);
+    }).obtenerDetalleItem(mes, item, sheetId);
+  }
+}
+
+
+
+// ✅ Ahora recibe el "detalle" de un solo ítem (obtenerDetalleItem),
+// pero mantiene el mismo diseño y efecto de siempre.
+function renderizarPantallaItem(mes, item, detalle) {
+  const cont = document.getElementById("contenidoItem");
+
+  // ✅ Si el ítem seleccionado es "Ítem" mostrar solo el logo centrado
+  if (item === "Ítem") {
+    cont.classList.remove("animarEntrada");
+    cont.innerHTML = `
+      <div style="display:flex; align-items:center; justify-content:center; width:40%; height:40%;">
+        <img src="https://i.imgur.com/tpJr7Xm.png" style="max-width:40%; height:auto;" />
+      </div>
+    `;
+    return;
+  }
+
+  // Si no llegó nada desde el backend
+  if (!detalle) {
+    cont.classList.remove("animarEntrada");
+    cont.innerHTML = "❌ Sin datos para este ítem";
+    return;
+  }
+
+  // Nombre bonito para mostrar
+  const nombreMostrar = (detalle.nombre || item || "").toString();
+  const mesUpper = mes.toUpperCase();
+  const itemFormat = nombreMostrar.charAt(0).toUpperCase() + nombreMostrar.slice(1).toLowerCase();
+
+  let ingresos = 0;
+  let gastos   = 0;
+  let saldo    = 0;
+
+  if (detalle.rangoEspecial) {
+    // ℹ️ Casos especiales (A22:A33, como SALDO A FAVOR / DINEROS)
+    ingresos = detalle.saldo || 0; // mostramos todo como "Ingresos"
+    gastos   = 0;
+    saldo    = detalle.saldo || 0;
+  } else {
+    // Caso normal
+    ingresos = detalle.destinado || 0;
+    gastos   = detalle.gastado   || 0;
+    saldo    = (detalle.saldo !== undefined ? detalle.saldo : (ingresos - gastos)) || 0;
+  }
+
+  cont.classList.remove("animarEntrada");
+  cont.innerHTML = `
+    <div class="gb-texto animarEntrada">
+      <div class="gb-mes">📅 ${mesUpper}</div>
+      <div class="gb-item">🔹 ${itemFormat}</div>
+      <div class="gb-datos">
+        💰 Ingresos: ${ingresos.toLocaleString("es-CL")}<br>
+        🛒 Gastos: ${gastos.toLocaleString("es-CL")}<br>
+        🧮 Saldo: ${saldo.toLocaleString("es-CL")}
+      </div>
+    </div>
+  `;
+}
+
+// ✅ Mantiene lógica original sin tocar comportamiento
+function ejecutarResetSaldo() {
+  const mes = document.getElementById("mesSelect").value;
+  const item = document.getElementById("itemSelect").value;
+
+  if (!mes || !item) {
+    mostrarAlertaFuturista("⚠️ Selecciona mes e ítem.");
+    return;
+  }
+
+  cargarDetalleItem(mes, item, true);
+}
+
+
+/**
+ * 📂 Obtener todas las boletas de un mes
+ */
+function obtenerBoletasMes(mes, sheetId, carpetaId) {
+  try {
+    const folder = DriveApp.getFolderById(carpetaId || CARPETA_ID_GLOBAL);
+    const files = folder.getFiles();
+    const resultados = [];
+
+    while (files.hasNext()) {
+      const file = files.next();
+      const nombre = file.getName();
+
+      // Buscar boletas que contengan el nombre del mes en su título
+      if (nombre.includes(mes)) {
+        resultados.push({
+          id: file.getId(),
+          nombre: nombre,
+          url: "https://drive.google.com/uc?export=view&id=" + file.getId()
+        });
+      }
+    }
+
+    return JSON.stringify(resultados);
+
+  } catch (e) {
+    return JSON.stringify({ error: e.message });
+  }
+}
+
+/**
+ * 📂 Obtener URL de previsualización de una boleta
+ */
+function obtenerUrlBoleta(fileId) {
+  try {
+    return "https://drive.google.com/uc?export=view&id=" + fileId;
+  } catch (e) {
+    return "ERROR: " + e.message;
+  }
+}
+
+/**
+ * 📧 Enviar una boleta al correo del usuario
+ */
+function descargarBoleta(fileId, correoDestino) {
+  try {
+    const file = DriveApp.getFileById(fileId);
+    MailApp.sendEmail({
+      to: correoDestino,
+      subject: "📄 Boleta seleccionada",
+      body: "Adjunto la boleta que seleccionaste.",
+      attachments: [file.getAs(MimeType.PDF)]
+    });
+    return "OK";
+  } catch (e) {
+    return "ERROR: " + e.message;
+  }
+}
+
+/**
+ * 📦 Descargar todas las boletas de un mes en un ZIP y enviar al correo
+ */
+function descargarTodasBoletas(mes, correoDestino, carpetaId) {
+  try {
+    const folder = DriveApp.getFolderById(carpetaId || CARPETA_ID_GLOBAL);
+    const files = folder.getFiles();
+    const blobs = [];
+
+    while (files.hasNext()) {
+      const file = files.next();
+      if (file.getName().includes(mes)) {
+        blobs.push(file.getBlob());
+      }
+    }
+
+    if (blobs.length === 0) {
+      return "No se encontraron boletas para " + mes;
+    }
+
+    // Crear ZIP temporal
+    const zip = Utilities.zip(blobs, "Boletas_" + mes + ".zip");
+
+    MailApp.sendEmail({
+      to: correoDestino,
+      subject: "📦 Boletas del mes " + mes,
+      body: "Adjunto todas las boletas del mes seleccionado.",
+      attachments: [zip]
+    });
+
+    return "OK";
+
+  } catch (e) {
+    return "ERROR: " + e.message;
+  }
+}
+
+
+// 🕒 Abrir modal de recordatorio
+function abrirModalRecordatorio() {
+  document.getElementById("recordatorio-modal").style.display = "flex";
+}
+
+// 💾 Guardar recordatorio avanzado (texto + fecha + hora + duración + repetición)
+function guardarRecordatorioProgramado() {
+  const texto = (document.getElementById("recordatorioTexto").value || "").trim();
+  const fecha = document.getElementById("recordatorioFecha").value;
+  const hora = document.getElementById("recordatorioHora").value;
+  const duracion = parseInt(document.getElementById("recordatorioDuracion").value) || 5;
+  const repetir = document.getElementById("recordatorioRepetir").value;
+  const usuario = (localStorage.getItem("userName") || "").trim();
+  const sheetId = localStorage.getItem("sheetId") || "";
+
+  if (!texto || !fecha || !hora) {
+    mostrarAlertaFuturista("⚠️ Complete todos los campos obligatorios.");
+    return;
+  }
+
+  // Convertir fecha y hora a milisegundos
+  const inicio = new Date(`${fecha}T${hora}:00`).getTime();
+  const fin = inicio + duracion * 60 * 1000;
+  const nuevo = { texto, inicio, fin, repetir };
+
+  // ✅ Guardar en localStorage (compatibilidad)
+  const lista = JSON.parse(localStorage.getItem("recordatoriosProgramados") || "[]");
+  lista.push(nuevo);
+  localStorage.setItem("recordatoriosProgramados", JSON.stringify(lista));
+
+    // ✅ Guardar también en la hoja "RECORDATORIOS"
+  google.script.run
+    .withSuccessHandler(resp => {
+      if (resp === "OK") {
+        mostrarAlertaFuturista("✅ Recordatorio guardado correctamente");
+        cerrarModal("recordatorio-modal");
+        cargarPantallaResumenLED();
+      } else {
+        mostrarAlertaFuturista("⚠️ Error al guardar: " + resp);
+      }
+    })
+    .guardarRecordatorioEnHoja(texto, fecha, hora, duracion, repetir, sheetId, usuario);
+
+  // Limpieza de campos
+  ["recordatorioTexto","recordatorioFecha","recordatorioHora","recordatorioDuracion"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = "";
+  });
+  document.getElementById("recordatorioRepetir").value = "ninguno";
+
+
+
+  // refrescar LED resumen
+  cargarPantallaResumenLED();
+}
+
+
+// 📅 Devolver el texto del recordatorio ACTIVO según fecha/hora actual y su repetición
+function obtenerRecordatorioActivo() {
+  const lista = JSON.parse(localStorage.getItem("recordatoriosProgramados") || "[]");
+  const ahora = Date.now();
+
+  for (let rec of lista) {
+    // no repetición: válido solo entre inicio y fin
+    if (rec.repetir === "ninguno") {
+      if (ahora >= rec.inicio && ahora <= rec.fin) return rec.texto;
+      continue;
+    }
+
+    // repetición diaria: usar la hora guardada, cada día
+    if (rec.repetir === "diario") {
+      const hoy = new Date();
+      const horaGuardada = new Date(rec.inicio);
+      const inicioHoy = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate(),
+                                 horaGuardada.getHours(), horaGuardada.getMinutes()).getTime();
+      const finHoy = inicioHoy + (rec.fin - rec.inicio);
+      if (ahora >= inicioHoy && ahora <= finHoy) return rec.texto;
+      continue;
+    }
+
+    // repetición semanal: mismo día de la semana + misma hora
+    if (rec.repetir === "semanal") {
+      const hoy = new Date();
+      const guardado = new Date(rec.inicio);
+      if (hoy.getDay() === guardado.getDay()) {
+        const inicioSem = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate(),
+                                   guardado.getHours(), guardado.getMinutes()).getTime();
+        const finSem = inicioSem + (rec.fin - rec.inicio);
+        if (ahora >= inicioSem && ahora <= finSem) return rec.texto;
+      }
+      continue;
+    }
+  }
+
+  return "";
+}
+
+// 🛑 Eliminar o detener el recordatorio actualmente activo
+function eliminarRecordatorioActivo() {
+  const lista = JSON.parse(localStorage.getItem("recordatoriosProgramados") || "[]");
+  const ahora = Date.now();
+  const usuario = (localStorage.getItem("userName") || "").trim();
+  const sheetId = localStorage.getItem("sheetId") || "";
+
+  // Detectar el recordatorio que está activo ahora
+  let indiceActivo = -1;
+  let recActivo = null;
+  for (let i = 0; i < lista.length; i++) {
+    const rec = lista[i];
+    if (ahora >= rec.inicio && ahora <= rec.fin) {
+      indiceActivo = i;
+      recActivo = rec;
+      break;
+    }
+  }
+
+  if (indiceActivo === -1) {
+    mostrarAlertaFuturista("⚠️ No hay recordatorio activo para detener.");
+    return;
+  }
+
+  // Eliminar del localStorage
+  lista.splice(indiceActivo, 1);
+  localStorage.setItem("recordatoriosProgramados", JSON.stringify(lista));
+
+  // Eliminar de la hoja del usuario
+  google.script.run.withSuccessHandler(resp => {
+    if (resp === "OK") {
+      mostrarAlertaFuturista("🛑 Recordatorio eliminado.");
+    } else {
+      mostrarAlertaFuturista("⚠️ Error al eliminar: " + resp);
+    }
+    cargarPantallaResumenLED();
+  }).eliminarRecordatorioDeHoja(recActivo.texto, usuario, sheetId);
+}
+
+function actualizarBotonRecordatorio(estadoVisible) {
+  const boton = document.getElementById("boton-detener-recordatorio");
+  if (!boton) return;
+  boton.style.display = estadoVisible ? "block" : "none";
+}
+
+
+// 🔹 Nueva pantalla LED: Resumen + Recordatorio (todo junto en una sola línea)
+function cargarPantallaResumenLED() {
+  const usuario = (localStorage.getItem("userName") || "").trim();
+  const sheetId = localStorage.getItem("sheetId") || "";
+  if (!usuario || !sheetId) return;
+
+  const ahora = new Date();
+  const fechaStr = ahora.toLocaleDateString('es-CL', { day: '2-digit', month: 'short', year: 'numeric' });
+  const horaStr = ahora.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const mesNombre = ahora.toLocaleString('es-CL', { month: 'long' });
+  const mesCap = mesNombre.charAt(0).toUpperCase() + mesNombre.slice(1);
+
+  const recordatorio = obtenerRecordatorioActivo();
+
+  // 💡 NUEVO: Sección del usuario y título del resumen (Texto en blanco)
+  // Utilizamos 'texto-recordatorio' y forzamos el estilo para asegurar el color blanco.
+  const textoUsuarioYTitulo = `
+    <span class="texto-recordatorio" style="margin-left:0; color:#ffffff !important; text-shadow:none !important;">${usuario} | 💰 Resumen del mes</span>
+  `;
+
+  // 🔹 Llamada al backend para obtener datos financieros del mes actual
+  google.script.run.withSuccessHandler(resumen => {
+    const led = document.getElementById("ledResumenContent");
+    if (!led) return;
+
+    // ✅ Convertir ingresos y egresos a formato de número chileno
+    const ingresos = resumen?.ingresos && !isNaN(resumen.ingresos)
+      ? Number(resumen.ingresos).toLocaleString("es-CL")
+      : "0";
+    const egresos = resumen?.egresos && !isNaN(resumen.egresos)
+      ? Number(resumen.egresos).toLocaleString("es-CL")
+      : "0";
+
+    // 🔹 Construir texto base del resumen (el detalle, que asumo tiene otro color)
+    let textoBaseDetalle = `
+      <span class="texto-resumen">
+        | 🕓 ${horaStr} | 📅 ${fechaStr} (${mesCap}) |
+        💵 Ingresos: $${ingresos} | 💸 Egresos: $${egresos}
+      </span>
+    `;
+
+    // 🔹 Si no hay movimientos, se muestra un mensaje simple
+    if (ingresos === "0" && egresos === "0") {
+      // El formato de la hora y fecha se mantiene, solo cambia el mensaje de finanzas
+      textoBaseDetalle = `
+        <span class="texto-resumen">
+          | 🕓 ${horaStr} | 📅 ${fechaStr} (${mesCap}) | Aún no hay movimientos registrados 💰
+        </span>
+      `;
+    }
+
+    // 🔹 Unir el nombre de usuario/título con el detalle financiero
+    let textoFinal = textoUsuarioYTitulo + textoBaseDetalle;
+
+
+    // 🔹 Agregar el recordatorio al final (solo si existe)
+    if (recordatorio) {
+      // El recordatorio se mantiene con su estilo original, agregando el emoji 📝
+      textoFinal += `
+        <span class="texto-recordatorio"> | 📝 ${recordatorio}</span>
+      `;
+      actualizarBotonRecordatorio(true);
+    } else {
+      actualizarBotonRecordatorio(false);
+    }
+
+    // 🔹 Mostrar el texto completo en el LED
+    led.innerHTML = textoFinal;
+  }).obtenerResumenFinanciero(mesCap, sheetId);
+}
+
+// ⏱️ Actualiza cada 5 segundos
+setInterval(cargarPantallaResumenLED, 5000);
+document.addEventListener("DOMContentLoaded", cargarPantallaResumenLED);
+
+
+
+
+function actualizarBotonRecordatorio(estadoVisible) {
+  const boton = document.getElementById("boton-detener-recordatorio");
+  if (!boton) return;
+  boton.style.display = estadoVisible ? "block" : "none";
+}
+
+// 📤 Sincroniza recordatorios desde la hoja "RECORDATORIOS" al localStorage al iniciar sesión
+function sincronizarRecordatoriosDesdeHoja() {
+  const usuario = (localStorage.getItem("userName") || "").trim();
+  const sheetId = localStorage.getItem("sheetId") || "";
+
+  // ⚠️ Verificación antes de hacer la llamada al backend
+  if (!usuario || !sheetId) return;
+
+  google.script.run.withSuccessHandler(lista => {
+    if (!lista || lista.length === 0) return;
+    localStorage.setItem("recordatoriosProgramados", JSON.stringify(lista));
+    console.log("✅ Recordatorios sincronizados desde hoja:", lista.length);
+  }).obtenerRecordatoriosDeUsuario(sheetId, usuario);
+}
+
+// 🔹 Función para actualizar la pantalla LED Resumen con color especial para recordatorios
+function actualizarPantallaResumen(texto, esRecordatorio = false) {
+  const ledResumen = document.getElementById("ledResumenContent");
+  if (!ledResumen) return;
+
+  // ✅ Si es recordatorio, se muestra en blanco brillante
+  if (esRecordatorio) {
+
+    ledResumen.innerHTML = `<span class="recordatorio">${texto}</span>`;
+  } else {
+    ledResumen.textContent = texto;
+  }
+}
+
+
+// 🔹 Permite pausar el desplazamiento global del LED (scroll) al hacer clic fuera del video
+document.getElementById("indicadores").addEventListener("click", (e) => {
+  const videoLED = document.getElementById("videoLED");
+  const ledSpan = document.querySelector("#indicadores span");
+
+  // Solo si existe un video dentro del LED
+  if (videoLED && e.target.id !== "videoLED") {
+    const currentState = ledSpan.style.animationPlayState || "running";
+    const newState = currentState === "running" ? "paused" : "running";
+    ledSpan.style.animationPlayState = newState;
+  }
+});
+
+
+// 🔉 Activar audio automáticamente en el primer clic dentro del LED (volumen medio)
+document.getElementById("indicadores").addEventListener("click", () => {
+  const videoLED = document.getElementById("videoLED");
+  if (videoLED && videoLED.muted) {
+    videoLED.muted = false;
+    videoLED.volume = 0.5; // volumen al 50%
+  }
+}, { once: true }); // se ejecuta una sola vez
+
+
+  // Normalizador universal (ignora mayúsculas, tildes y espacios)
+  function norm(txt) {
+    return (txt || "")
+      .toString()
+      .normalize("NFD")
+      .replace(/\p{Diacritic}/gu, "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .toUpperCase();
+  }
+
+  // Tiempo máximo de vida del caché (en milisegundos)
+  const CACHE_DURATION = 5 * 60 * 1000; // 5 minutos
+
+  document.addEventListener("DOMContentLoaded", () => {
+    const usuario = localStorage.getItem("userName") || "";
+    if (!usuario) return;
+
+    // ⚡ Ocultamos todos los botones brevemente al inicio
+    document.querySelectorAll("button, .btn, .boton").forEach(btn => {
+      btn.style.opacity = "0";
+      btn.style.transition = "opacity 0.3s ease";
+    });
+
+    const cacheKey = `botonesVisibles_cache_${usuario}`;
+    const cacheData = localStorage.getItem(cacheKey);
+    let usarCache = false;
+
+    if (cacheData) {
+      try {
+        const { configurados, visibles, timestamp } = JSON.parse(cacheData);
+        // Verificamos si el caché aún no ha expirado
+        if (Date.now() - (timestamp || 0) < CACHE_DURATION) {
+          usarCache = true;
+          aplicarReglasDeBotones(configurados, visibles, true);
+        }
+      } catch (e) {
+        console.warn("Error leyendo caché de botones:", e);
+      }
+    }
+
+    // 🌀 Actualizamos siempre desde el servidor (aunque haya caché)
+    google.script.run
+      .withSuccessHandler(({ configurados, visibles }) => {
+        aplicarReglasDeBotones(configurados, visibles, false);
+        localStorage.setItem(
+          cacheKey,
+          JSON.stringify({ configurados, visibles, timestamp: Date.now() })
+        );
+      })
+      .obtenerBotonesConfigYVisibles(usuario);
+
+    // Si no había caché, mostramos los botones tras 300 ms
+    if (!usarCache) {
+      setTimeout(() => {
+        document.querySelectorAll("button, .btn, .boton").forEach(btn => {
+          btn.style.opacity = "1";
+        });
+      }, 300);
+    }
+  });
+
+  function aplicarReglasDeBotones(configurados, visibles, desdeCache = false) {
+    if (!Array.isArray(configurados) || configurados.length === 0) {
+      document.querySelectorAll("button, .btn, .boton").forEach(btn => {
+        btn.style.opacity = "1";
+      });
+      return;
+    }
+
+    const setConfigurados = new Set(configurados.map(norm));
+    const setVisibles = new Set(visibles.map(norm));
+
+    document.querySelectorAll("button, .btn, .boton").forEach(btn => {
+      const texto = norm(btn.textContent || btn.innerText);
+      if (setConfigurados.has(texto)) {
+        btn.style.display = setVisibles.has(texto) ? "" : "none";
+      } else {
+        btn.style.display = ""; // visible si no está listado en la hoja
+      }
+      setTimeout(() => { btn.style.opacity = "1"; }, 200);
+    });
+  }
+
+ // ✅ Cargar dinámicamente el video del container según hoja "Videos"
+document.addEventListener("DOMContentLoaded", () => {
+  const usuarioActual = localStorage.getItem("nombreUsuario") || "";
+  const videoContainer = document.getElementById("videoContainer");
+  const videoElement = document.getElementById("videoPublicidad");
+  const source = document.getElementById("videoSource");
+
+  // ⬇⬇⬇ NUEVO: si la estructura esperada no existe, no hacemos nada
+  if (!videoContainer || !videoElement || !source) {
+    return;
+  }
+
+  google.script.run
+    .withSuccessHandler(data => {
+      if (!data || !data.url) {
+        videoContainer.style.display = "none";
+        return;
+      }
+
+      const reglas = (data.reglas || "").split(",").map(x => x.trim().toLowerCase());
+      const nombre = usuarioActual.trim().toLowerCase();
+
+      const visibleParaTodos = !reglas || reglas.length === 0 || reglas[0] === "";
+      const permitido = visibleParaTodos || reglas.includes(nombre);
+
+      if (permitido) {
+        source.src = data.url;
+        videoContainer.style.display = "flex";
+        videoElement.load();
+        videoElement.play().catch(() => {});
+      } else {
+        videoContainer.style.display = "none";
+      }
+    })
+    .getVideoContainerData();
+});
+
+
+// ✅ Anti-Freeze • Mantener vivo el reproductor del CONTENEDOR
+function protegerStreaming() {
+  const video = document.getElementById("videoPublicidad");
+  const iframe = document.getElementById("livePlayer");
+
+  // ⬇⬇⬇ NUEVO: si no existe ninguno de los dos, no hacemos nada
+  if (!video && !iframe) {
+    return;
+  }
+
+  setInterval(() => {
+    // 🎥 Si está mostrando video MP4/HLS
+    if (video && video.style.display !== "none") {
+      if (video.paused || video.readyState < 2) {
+        video.play().catch(()=>{});
+      }
+    }
+
+    // 📺 Si está en modo streaming (iframe)
+    if (iframe && iframe.style.display !== "none") {
+      // Reload invisible del iframe cada 15 minutos para evitar pantalla gris
+      if (!iframe.dataset.tiempo) {
+        iframe.dataset.tiempo = Date.now();
+      }
+      if (Date.now() - iframe.dataset.tiempo > 900000) { // 15 minutos
+        const src = iframe.src;
+        iframe.src = ""; setTimeout(()=> iframe.src = src, 500);
+        iframe.dataset.tiempo = Date.now();
+      }
+    }
+
+  }, 5000); // ✅ Revisa cada 5 segundos
+}
+
+// 🚀 Ejecutar cuando la página esté lista
+document.addEventListener("DOMContentLoaded", protegerStreaming);
+
+
+
+function reproducirVideo(url) {
+  const video = document.getElementById("videoPlayer");
+
+  if (!url) {
+    video.style.display = "none";
+    return;
+  }
+
+  video.style.display = "block";
+
+  // Si es streaming HLS (.m3u8)
+  if (url.includes(".m3u8")) {
+    if (Hls.isSupported()) {
+      const hls = new Hls();
+      hls.loadSource(url);
+      hls.attachMedia(video);
+    } else {
+      video.src = url;
+    }
+  } else {
+    // Si es MP4 u otro formato
+    video.src = url;
+  }
+}
+ // Registrar Service Worker para PWA (GitHub Pages)
+
+  if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js')
+      .then(reg => console.log('Service Worker registrado', reg))
+      .catch(err => console.error('Error SW', err));
+  });
+  } else {
+    console.log('Service Worker no soportado en este navegador.');
+  }
+
+
+function forzarAutoplay(video) {
+  let intentos = 0;
+  const intentar = () => {
+    video.muted = true;
+    const p = video.play();
+    if (p) {
+      p.catch(() => {
+        if (intentos < 15) {
+          intentos++;
+          setTimeout(intentar, 200);
+        }
+      });
+    }
+  };
+  intentar();
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  const videoContenedor = document.getElementById("video-contenedor");
+
+  if (!videoContenedor) return;
+
+  videoContenedor.muted = true;
+  videoContenedor.autoplay = false;
+  videoContenedor.controls = true;
+
+  let usuarioActivoVideoContenedor = false;
+
+  document.addEventListener("click", (e) => {
+
+    // Si hacen click dentro de la pantalla LED → NO activar sonido del contenedor
+    if (e.target.id === "videoLED" || e.target.closest("#videoLED-container")) {
+      return;
+    }
+
+    // Si hacen click afuera del LED → activar sonido del contenedor
+    if (!usuarioActivoVideoContenedor) {
+      usuarioActivoVideoContenedor = true;
+      videoContenedor.muted = false;
+      videoContenedor.play().catch(()=>{});
+    }
+  });
+
+  // Si el usuario pausa manualmente → no reanudar jamás automático
+  videoContenedor.addEventListener("pause", () => {
+    usuarioActivoVideoContenedor = true;
+  });
+});
+
+
+
+
+document.addEventListener("DOMContentLoaded", () => {
+  sincronizarRecordatoriosDesdeHoja();
+  cargarEstilos();
+});
+
+
+  // 🔒 Bloquear zoom en móviles
+  document.addEventListener('gesturestart', e => e.preventDefault());
+  document.addEventListener('gesturechange', e => e.preventDefault());
+  document.addEventListener('gestureend', e => e.preventDefault());
+
+  // 🔒 Bloquear doble toque (zoom por doble tap)
+  let lastTouchEnd = 0;
+  document.addEventListener('touchend', function (event) {
+    const now = (new Date()).getTime();
+    if (now - lastTouchEnd <= 300) {
+      event.preventDefault();
+    }
+    lastTouchEnd = now;
+  }, false);
+
+  // 🔒 Bloquear zoom con Ctrl + scroll o gestos del navegador
+  document.addEventListener('wheel', function (e) {
+    if (e.ctrlKey) e.preventDefault();
+  }, { passive: false });
+
+  // 🔒 En algunos navegadores, bloquear el gesto de pinza por completo
+  document.addEventListener('touchmove', function (e) {
+    if (e.scale !== undefined && e.scale !== 1) {
+      e.preventDefault();
+    }
+  }, { passive: false });
+
+// 🔒 Bloqueo de clic derecho y teclas de inspección
+document.addEventListener('contextmenu', e => e.preventDefault());
+document.addEventListener('keydown', e => {
+  const key = e.key || e.keyCode;
+  if (
+    key === 'F12' ||
+    (e.ctrlKey && e.shiftKey && ['I','J','C'].includes(String(key).toUpperCase())) ||
+    (e.ctrlKey && String(key).toUpperCase() === 'U')
+  ) {
+    e.preventDefault();
+  }
+});
+
+
+
+document.addEventListener("DOMContentLoaded", () => {
+    const usuario = sessionStorage.getItem("usuarioActual") || "";
+    if (!usuario) return;
+    
+    google.script.run
+      .withSuccessHandler(mostrarLogosInstalados)
+      .obtenerLogosInstalados(usuario, "INDEX");
+  });
+
+  function mostrarLogosInstalados(data) {
+    if (!data || data.length === 0) return;
+
+    const contenedor = document.getElementById("logo-index");
+    if (!contenedor) return;
+
+    const ultimo = data[data.length - 1];  // último logo instalado para INDEX
+    contenedor.innerHTML = `<img src="${ultimo.url}" style="width:100%;height:auto;">`;
+  }
+
+
+
+  // Bloquear gestos de zoom en iOS (gesturestart / change / end)
+  document.addEventListener('gesturestart', function (e) {
+    e.preventDefault();
+  }, { passive: false });
+
+  document.addEventListener('gesturechange', function (e) {
+    e.preventDefault();
+  }, { passive: false });
+
+  document.addEventListener('gestureend', function (e) {
+    e.preventDefault();
+  }, { passive: false });
+
+  // Bloquear zoom con ctrl + scroll (algunos Android / navegadores de escritorio)
+  document.addEventListener('wheel', function (e) {
+    if (e.ctrlKey) {
+      e.preventDefault();
+    }
+  }, { passive: false });
+
+
+document.addEventListener("visibilitychange", function () {
+
+// ✅ Guardar estado al minimizar / ocultar (solo para MP4 del videoPlayer)
+if (document.hidden) {
+  try {
+    const videoPlayer = document.getElementById("videoPlayer");
+    const source = document.getElementById("videoSource");
+
+    if (videoPlayer && videoPlayer.style.display !== "none") {
+      const src = (source && source.src) ? source.src : (videoPlayer.currentSrc || "");
+      const st = {
+        src,
+        t: videoPlayer.currentTime || 0,
+        paused: videoPlayer.paused
+      };
+      sessionStorage.setItem("estadoVideoPlayer", JSON.stringify(st));
+    }
+  } catch(e) {}
+  return; // 👈 importante: si está oculta, salimos y no hacemos “reinicios”
+}
+
+
+  // Si volvemos a la app
+  if (!document.hidden) {
+
+    // 🟦 1. Reiniciar VIDEO LED superior
+    try {
+      const videoLED = document.getElementById("videoLED");
+      if (videoLED) {
+        videoLED.pause();
+        videoLED.load();   // recargar fuente
+        videoLED.play().catch(()=>{}); // intentar reproducir sin error
+      }
+    } catch(e) { console.log("Error recuperando LED:", e); }
+
+    // 🟩 2. Reiniciar video principal del contenedor
+    // ✅ Mantener MP4 pausado al minimizar (NO hacer load aquí)
+try {
+  const videoPlayer = document.getElementById("videoPlayer");
+  const source = document.getElementById("videoSource");
+
+  if (videoPlayer && videoPlayer.style.display !== "none") {
+    // Si hay un estado guardado, lo restauramos
+    const raw = sessionStorage.getItem("estadoVideoPlayer");
+    if (raw) {
+      const st = JSON.parse(raw);
+
+      // Solo aplica si el src coincide (mismo MP4)
+      const actualSrc = (source && source.src) ? source.src : (videoPlayer.currentSrc || "");
+      if (st.src && actualSrc && st.src === actualSrc) {
+
+        // Restaurar tiempo cuando haya metadata lista
+        const aplicar = () => {
+          try {
+            // Evita NaN
+            if (Number.isFinite(st.t)) videoPlayer.currentTime = st.t;
+            if (st.paused) {
+              videoPlayer.pause(); // mantener pausado
+            } else {
+              videoPlayer.play().catch(()=>{});
+            }
+          } catch(e) {}
+        };
+
+        if (videoPlayer.readyState >= 1) {
+          aplicar();
+        } else {
+          videoPlayer.addEventListener("loadedmetadata", aplicar, { once: true });
+        }
+      }
+    }
+  }
+} catch(e) {
+  console.log("Error restaurando estado videoPlayer:", e);
+}
+
+
+    // 🟧 3. Reiniciar HLS.js si se usa streaming .m3u8
+    try {
+  if (window.hlsInstance) {
+    const currentUrl = window.hlsInstance.url;
+    const videoPlayer = document.getElementById("videoPlayer");
+
+    window.hlsInstance.destroy();
+    window.hlsInstance = new Hls();
+    window.hlsInstance.loadSource(currentUrl);
+
+    if (videoPlayer) {
+      window.hlsInstance.attachMedia(videoPlayer);
+      videoPlayer.play().catch(()=>{});
+    }
+  }
+} catch(e) {
+  console.log("Error reiniciando HLS:", e);
+}
+
+
+    // 🟥 4. Si es iframe (YouTube / Twitch), forzar recarga
+    const iframe = document.getElementById("iframePlayer");
+    if (iframe && iframe.style.display !== "none") {
+      const src = iframe.src;
+      iframe.src = "";     // reset
+      setTimeout(() => { iframe.src = src; }, 300);
+    }
+
+  }
+});
+
+
+
+// ============================================================
+// 🔹 CONTROL AUTOMÁTICO DE INACTIVIDAD (index.html)
+// ============================================================
+
+let tiempoInactividadMs = 0;
+let temporizadorInactividad = null;
+// 🔁 NUEVO: intervalo que revisa en segundo plano
+let intervaloChequeoInactividad = null;
+
+// 🔑 Clave en localStorage para guardar el “momento de expiración”
+const CLAVE_LS_EXPIRA_INACTIVIDAD = "expiraSesionInactividad";
+
+/**
+ * Inicializa el control de inactividad:
+ * - Pide a Apps Script los minutos configurados en INACTIVIDAD USUARIO!A2
+ * - Si es > 0, activa el contador, listeners y chequeo periódico
+ */
+function inicializarControlInactividad() {
+  const usuario = (localStorage.getItem("userName") || "").trim();
+  if (!usuario) {
+    // Si no hay usuario logueado, no tiene sentido controlar inactividad
+    return;
+  }
+
+  // 🧹 Limpieza por si quedó algo de otra sesión
+  try {
+    localStorage.removeItem(CLAVE_LS_EXPIRA_INACTIVIDAD);
+  } catch (e) {
+    console.warn("No se pudo limpiar expiración vieja de inactividad:", e);
+  }
+
+  google.script.run
+    .withSuccessHandler(function (minutos) {
+      try {
+        console.log("⏱️ Valor crudo recibido desde Apps Script (A2):", minutos);
+
+        let m = Number(minutos);
+
+        // 🔍 Caso especial: A2 escrito como HORA (ej: 0:05:00)
+        // Sheets lo entrega como fracción de día (ej: 0.00347)
+        if (m > 0 && m < 1) {
+          m = m * 24 * 60; // días → minutos
+          console.log("🔁 A2 venía como fracción de día. Convertido a minutos reales:", m);
+        }
+
+        if (!m || !isFinite(m) || m <= 0) {
+          console.log("⏱️ Control de inactividad desactivado (valor vacío o 0).");
+          return;
+        }
+
+        tiempoInactividadMs = m * 60 * 1000;
+        console.log("⏱️ Control de inactividad ACTIVO. Minutos:", m, "→ Milisegundos:", tiempoInactividadMs);
+
+        configurarListenersInactividad();
+        // 👉 Al iniciar, revisamos si ya estaba vencida la sesión
+        verificarInactividadAlVolver();
+        // 👉 Y arrancamos el chequeo en segundo plano
+        iniciarChequeoPeriodicoInactividad();
+      } catch (e) {
+        console.warn("Error al iniciar control de inactividad:", e);
+      }
+    })
+    .obtenerTiempoInactividadMinutos(); // 🚀 función en Code.gs
+}
+
+/**
+ * Registra eventos que cuentan como "actividad":
+ * - click, teclado, touch
+ * - minimizar / cambiar pestaña / cambiar app
+ * - bloquear pantalla del celular, etc.
+ */
+function configurarListenersInactividad() {
+  const registrarActividadLocal = () => {
+    reiniciarTemporizadorInactividad();
+  };
+
+  // Solo eventos claramente generados por el usuario
+  const eventos = [
+    "mousedown",
+    "keydown",
+    "touchstart",
+    "touchmove"
+  ];
+
+  eventos.forEach(ev => {
+    window.addEventListener(ev, registrarActividadLocal, { passive: true });
+  });
+
+  // 🔵 Página oculta → minimizar, cambiar pestaña, cambiar app
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      console.log("📴 Página oculta → comenzando temporizador de inactividad");
+      reiniciarTemporizadorInactividad();
+    } else {
+      console.log("📱 Página visible nuevamente → verificar si ya venció");
+      verificarInactividadAlVolver();
+    }
+  });
+
+  // 🔵 Ventana pierde foco (cambiar de app, abrir otra pestaña, etc.)
+  window.addEventListener("blur", () => {
+    console.log("🔕 Ventana perdió el foco → comenzando temporizador");
+    reiniciarTemporizadorInactividad();
+  });
+
+  // 🔵 Ventana vuelve a foco
+  window.addEventListener("focus", () => {
+    console.log("🔔 Ventana volvió a foco → verificar si ya venció");
+    verificarInactividadAlVolver();
+  });
+
+  // 🔵 Cuando el navegador dispara pagehide (muy típico al BLOQUEAR pantalla en móviles)
+  window.addEventListener("pagehide", () => {
+    console.log("📵 'pagehide' → posible bloqueo de pantalla o cierre temporal");
+    reiniciarTemporizadorInactividad();
+  });
+
+  // 🔵 Cuando vuelve desde el historial / caché (móvil Safari, etc.)
+  window.addEventListener("pageshow", () => {
+    console.log("📲 'pageshow' → revisando inactividad al volver");
+    verificarInactividadAlVolver();
+  });
+}
+
+/**
+ * 🔁 NUEVO:
+ * Chequeo periódico en segundo plano (cada pocos segundos)
+ * para que en el CELULAR no tengas que hacer click al volver.
+ */
+function iniciarChequeoPeriodicoInactividad() {
+  if (!tiempoInactividadMs) return;
+
+  // Limpiar si ya había uno
+  if (intervaloChequeoInactividad) {
+    clearInterval(intervaloChequeoInactividad);
+    intervaloChequeoInactividad = null;
+  }
+
+  // Intervalo fijo de MEDIO segundo (puedes subirlo si quieres menos frecuencia)
+  intervaloChequeoInactividad = setInterval(() => {
+    comprobarExpiracionSilenciosa();
+  }, 500);
+}
+
+function detenerChequeoPeriodicoInactividad() {
+  if (intervaloChequeoInactividad) {
+    clearInterval(intervaloChequeoInactividad);
+    intervaloChequeoInactividad = null;
+  }
+}
+
+/**
+ * 🔍 NUEVO:
+ * Revisa SOLO si el tiempo ya venció, SIN reiniciar el temporizador.
+ * Así no se "corre" la hora de expiración al hacer el chequeo.
+ */
+function comprobarExpiracionSilenciosa() {
+  if (!tiempoInactividadMs) return;
+
+  try {
+    const valor = localStorage.getItem(CLAVE_LS_EXPIRA_INACTIVIDAD);
+    const expira = valor ? parseInt(valor, 10) : 0;
+    const ahora = Date.now();
+
+    if (expira && ahora >= expira) {
+      console.log("⏰ Inactividad detectada por chequeo periódico (sin interacción).");
+      manejarInactividadDetectada();
+    }
+  } catch (e) {
+    console.warn("Error en chequeo periódico de inactividad:", e);
+  }
+}
+
+/**
+ * Reinicia el temporizador de inactividad.
+ * - Actualiza el timeout en memoria
+ * - Y guarda en localStorage el momento exacto en que debe EXPIRAR la sesión
+ */
+function reiniciarTemporizadorInactividad() {
+  if (!tiempoInactividadMs) return;
+
+  if (temporizadorInactividad) {
+    clearTimeout(temporizadorInactividad);
+  }
+
+  const ahora = Date.now();
+  const expiraEn = ahora + tiempoInactividadMs;
+
+  try {
+    localStorage.setItem(CLAVE_LS_EXPIRA_INACTIVIDAD, String(expiraEn));
+  } catch (e) {
+    console.warn("No se pudo guardar expiración de inactividad en localStorage:", e);
+  }
+
+  temporizadorInactividad = setTimeout(() => {
+    manejarInactividadDetectada();
+  }, tiempoInactividadMs);
+
+  // Nos aseguramos de que el chequeo periódico esté activo
+  iniciarChequeoPeriodicoInactividad();
+}
+
+/**
+ * Verifica, usando el reloj REAL (Date.now),
+ * si ya se pasó el tiempo guardado en localStorage.
+ * - Si ya pasó → cierra sesión de inmediato.
+ * - Si no → simplemente reinicia el temporizador.
+ */
+function verificarInactividadAlVolver() {
+  if (!tiempoInactividadMs) return;
+
+  try {
+    const valor = localStorage.getItem(CLAVE_LS_EXPIRA_INACTIVIDAD);
+    const expira = valor ? parseInt(valor, 10) : 0;
+    const ahora = Date.now();
+
+    if (expira && ahora >= expira) {
+      console.log("⏰ Inactividad detectada al volver (focus / desbloqueo / reload).");
+      manejarInactividadDetectada();
+    } else {
+      // No ha pasado el tiempo aún → seguimos como siempre
+      reiniciarTemporizadorInactividad();
+    }
+  } catch (e) {
+    console.warn("Error verificando inactividad al volver:", e);
+    reiniciarTemporizadorInactividad();
+  }
+}
+
+/**
+ * Cuando se cumple el tiempo de inactividad:
+ * - Intenta registrar al usuario como OFFLINE (no bloqueante)
+ * - Cierra la sesión reutilizando cerrarSesion()
+ * - Si algo falla, redirige igual al login
+ */
+function manejarInactividadDetectada() {
+  try {
+    // Detenemos cualquier timer que quede vivo
+    if (temporizadorInactividad) {
+      clearTimeout(temporizadorInactividad);
+      temporizadorInactividad = null;
+    }
+    detenerChequeoPeriodicoInactividad();
+
+    // 🧹 Limpiamos el valor de expiración para esta sesión
+    try {
+      localStorage.removeItem(CLAVE_LS_EXPIRA_INACTIVIDAD);
+    } catch (e) {
+      console.warn("No se pudo limpiar expiración de inactividad al cerrar sesión:", e);
+    }
+
+    const usuario =
+      (localStorage.getItem("usuarioActivo") ||
+
+        localStorage.getItem("userName") ||
+        "").trim();
+
+    console.log("⏰ Inactividad detectada. Usuario:", usuario || "(vacío)");
+
+    if (usuario) {
+      try {
+        google.script.run.registrarOffline(usuario);
+      } catch (e) {
+        console.warn("No se pudo registrar OFFLINE por inactividad:", e);
+      }
+    }
+
+    try {
+      if (typeof mostrarAlerta === "function") {
+        mostrarAlerta("⏰ Tu sesión se cerró por inactividad.");
+      }
+    } catch (e) {
+      console.warn("Error mostrando alerta de inactividad:", e);
+    }
+
+    cerrarSesion();
+  } catch (e) {
+    console.error("Error en manejarInactividadDetectada:", e);
+    try {
+      const urlLogin = obtenerUrlLoginFinal();
+      window.top.location.replace(urlLogin);
+    } catch (e2) {
+      console.error("Error redirigiendo al login tras inactividad:", e2);
+    }
+  }
+}
+
+
+// ✅ Activar el control de inactividad cuando el DOM esté listo
+document.addEventListener("DOMContentLoaded", inicializarControlInactividad);
+
+// ✅ Esto ya lo tenías: registrar actividad al cargar la página
+(function() {
+  const usuario = (localStorage.getItem("userName") || "").trim();
+  if (usuario) {
+    // Puedes pasar opcionalmente el nombre de la página
+    google.script.run.registrarActividad(
+      usuario,
+      document.body.getAttribute("data-page") || ""
+    );
+  }
+})();
+
+  </script>
+
+<script>
+const API_URL = "https://script.google.com/macros/s/AKfycbzJ99cD95kiTpWQeNqEK0iX2HLmseOfkeHGKZp-IVwt4tfMvNWUTTZ-MIduOc4j1-xmog/exec";
+
+async function enviarDatos() {
+  const data = {
+    fecha: new Date().toISOString(),
+    monto: 100,
+    descripcion: "Prueba desde PWA"
+  };
+
+  const res = await fetch(API_URL, {
+    method: "POST",
+    body: JSON.stringify(data)
+  });
+
+  const json = await res.json();
+  console.log(json);
+  alert("Datos enviados ✔");
+}
+</script>
+
+<button onclick="enviarDatos()">Enviar a Google Sheets</button>
+
+
+<script>
+  // ===============================
+  // REGISTRO SERVICE WORKER (PWA)
+  // ===============================
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./sw.js', { scope: './' })
+        .then(reg => {
+          console.log('✅ Service Worker registrado:', reg.scope);
+        })
+        .catch(err => {
+          console.error('❌ Error registrando Service Worker:', err);
+        });
+    });
+  }
+</script>
+
+  
+  <script src="js/app.js"></script>
+  <script src="js/sw-register.js"></script>
+</body>
+</html>
